@@ -13,7 +13,6 @@ import {
   ArrowRight,
   TrendingDown,
   ShieldAlert,
-  Sparkles,
   ExternalLink
 } from 'lucide-react';
 import {
@@ -114,24 +113,6 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={async () => {
-              try {
-                setLoading(true);
-                const res = await api.loadOfficialC01();
-                alert(`Official C01 Dataset Loaded Successfully!\nTotal: ${res.total} records (19 unique, 1 duplicate).\nSource: Starter_Data/C01/fixture.json`);
-                await loadDashboard();
-              } catch (err: any) {
-                alert(`Error loading C01 dataset: ${err.message}`);
-              } finally {
-                setLoading(false);
-              }
-            }}
-            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Load Official C01 Dataset</span>
-          </button>
           <button
             onClick={() => onNavigate('explorer')}
             className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"

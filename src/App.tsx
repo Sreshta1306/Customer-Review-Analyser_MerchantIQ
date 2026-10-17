@@ -13,7 +13,6 @@ import { CustomerDiscovery } from './pages/CustomerDiscovery';
 import { PilotExperiments } from './pages/PilotExperiments';
 import { ReportsExports } from './pages/ReportsExports';
 import { Settings } from './pages/Settings';
-import { GuidedDemoModal } from './components/GuidedDemoModal';
 import { LoginPage } from './pages/auth/LoginPage';
 import { SignupPage } from './pages/auth/SignupPage';
 import { api, auth } from './api/client';
@@ -28,9 +27,7 @@ export const App: React.FC = () => {
   // App navigation & state
   const [currentPage, setCurrentPage] = useState<PageId>('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isDemoGuideOpen, setIsDemoGuideOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [totalUniqueReviews, setTotalUniqueReviews] = useState(19);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Check existing session on mount
@@ -52,21 +49,6 @@ export const App: React.FC = () => {
 
     verifySession();
   }, []);
-
-  useEffect(() => {
-    if (currentUser) {
-      loadHeaderStats();
-    }
-  }, [refreshTrigger, currentPage, currentUser]);
-
-  const loadHeaderStats = async () => {
-    try {
-      const stats = await api.getStats();
-      setTotalUniqueReviews(stats.valid_unique_reviews);
-    } catch (e) {
-      // Fallback
-    }
-  };
 
   const handleRunAnalysis = async () => {
     try {
@@ -139,7 +121,6 @@ export const App: React.FC = () => {
         onSelectPage={(page) => setCurrentPage(page)}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-        onLaunchDemoGuide={() => setIsDemoGuideOpen(true)}
       />
 
       {/* Main Viewport Container */}
@@ -147,10 +128,8 @@ export const App: React.FC = () => {
         {/* Top Header */}
         <TopBar
           currentPage={currentPage}
-          totalUniqueReviews={totalUniqueReviews}
           onRefreshData={handleRefreshData}
           onRunAnalysis={handleRunAnalysis}
-          onLaunchDemoGuide={() => setIsDemoGuideOpen(true)}
           isAnalyzing={isAnalyzing}
           currentUser={currentUser}
           onSignOut={handleSignOut}
@@ -192,12 +171,6 @@ export const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Interactive Judge Walkthrough Modal */}
-      <GuidedDemoModal
-        isOpen={isDemoGuideOpen}
-        onClose={() => setIsDemoGuideOpen(false)}
-        onNavigateToPage={(page) => setCurrentPage(page)}
-      />
     </div>
   );
 };

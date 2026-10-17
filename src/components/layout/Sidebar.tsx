@@ -10,8 +10,7 @@ import {
   FileText,
   Settings,
   ChevronLeft,
-  ChevronRight,
-  Sparkles
+  ChevronRight
 } from 'lucide-react';
 
 export type PageId =
@@ -33,15 +32,13 @@ interface SidebarProps {
   onSelectPage: (page: PageId) => void;
   collapsed: boolean;
   onToggleCollapse: () => void;
-  onLaunchDemoGuide: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentPage,
   onSelectPage,
   collapsed,
-  onToggleCollapse,
-  onLaunchDemoGuide
+  onToggleCollapse
 }) => {
   const navSections = [
     {
@@ -138,20 +135,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ))}
       </div>
 
-      {/* Guided Walkthrough Launcher */}
-      <div className="p-2 border-t border-slate-800 space-y-2">
-        <button
-          onClick={onLaunchDemoGuide}
-          className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-amber-300 bg-amber-950/40 border border-amber-800/50 hover:bg-amber-900/40 transition-colors ${
-            collapsed ? 'justify-center' : ''
-          }`}
-          title="Guided Hackathon Walkthrough for Judges"
-        >
-          <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-          {!collapsed && <span>Guided Demo (Judges)</span>}
-        </button>
-
-        {/* Collapse toggle */}
+      <div className="p-2 border-t border-slate-800">
         <button
           onClick={onToggleCollapse}
           className="w-full flex items-center justify-center py-1.5 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"

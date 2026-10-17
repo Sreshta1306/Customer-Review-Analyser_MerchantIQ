@@ -1,14 +1,12 @@
 import React from 'react';
 import { PageId } from './Sidebar';
-import { RefreshCw, Play, Sparkles, LogOut, User, Download } from 'lucide-react';
+import { RefreshCw, Play, LogOut, Download } from 'lucide-react';
 import { UserAccount } from '../../types';
 
 interface TopBarProps {
   currentPage: PageId;
-  totalUniqueReviews: number;
   onRefreshData: () => void;
   onRunAnalysis: () => void;
-  onLaunchDemoGuide: () => void;
   isAnalyzing: boolean;
   currentUser?: UserAccount | null;
   onSignOut?: () => void;
@@ -16,10 +14,8 @@ interface TopBarProps {
 
 export const TopBar: React.FC<TopBarProps> = ({
   currentPage,
-  totalUniqueReviews,
   onRefreshData,
   onRunAnalysis,
-  onLaunchDemoGuide,
   isAnalyzing,
   currentUser,
   onSignOut
@@ -52,16 +48,7 @@ export const TopBar: React.FC<TopBarProps> = ({
         <span className="font-semibold text-slate-900">{current.title}</span>
       </div>
 
-      {/* Zone 2: Dataset status & Metadata */}
-      <div className="hidden xl:flex items-center gap-3 text-xs text-slate-500 whitespace-nowrap">
-        <span>Dataset: <strong className="font-medium text-slate-800">C01 Starter Fixture</strong></span>
-        <span className="text-slate-300">·</span>
-        <span>Unique Reviews: <strong className="font-mono tabular-nums text-slate-900">{totalUniqueReviews}</strong></span>
-        <span className="text-slate-300">·</span>
-        <span className="text-slate-600">Decision Support Mode</span>
-      </div>
-
-      {/* Zone 3: Primary Action, Quick Controls, & User Session */}
+      {/* Zone 2: Primary Action, Quick Controls, & User Session */}
       <div className="flex items-center gap-2.5 shrink-0">
         <button
           onClick={onRefreshData}
@@ -69,14 +56,6 @@ export const TopBar: React.FC<TopBarProps> = ({
           className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
         >
           <RefreshCw className="w-4 h-4" />
-        </button>
-
-        <button
-          onClick={onLaunchDemoGuide}
-          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-900 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors whitespace-nowrap cursor-pointer"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-          Judge Walkthrough
         </button>
 
         <a

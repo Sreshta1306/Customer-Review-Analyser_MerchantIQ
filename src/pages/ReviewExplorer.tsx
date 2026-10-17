@@ -18,7 +18,6 @@ import {
   Check,
   X,
   FileSpreadsheet,
-  Sparkles
 } from 'lucide-react';
 
 export const ReviewExplorer: React.FC = () => {
@@ -211,24 +210,6 @@ R103,PROD-UNKNOWN,Unknown Item,2,"Fabric was totally see through and sizing ran 
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={async () => {
-              try {
-                setLoading(true);
-                const res = await api.loadOfficialC01();
-                alert(`Loaded Official C01 Dataset (${res.total} reviews, 19 unique, 1 duplicate).\nSource: Starter_Data/C01/fixture.json`);
-                await fetchReviews();
-              } catch (err: any) {
-                alert(`Failed to load C01 dataset: ${err.message}`);
-              } finally {
-                setLoading(false);
-              }
-            }}
-            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Load Official C01</span>
-          </button>
           <button
             onClick={handleDownloadSampleCsv}
             className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1.5"
