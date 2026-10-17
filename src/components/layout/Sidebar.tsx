@@ -7,9 +7,6 @@ import {
   CheckSquare,
   History,
   FlaskConical,
-  Calculator,
-  Users2,
-  GitBranch,
   FileText,
   Settings,
   ChevronLeft,
@@ -67,14 +64,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'EVALUATION & BENCHMARK',
       items: [
         { id: 'evaluation' as PageId, label: 'Evaluation Lab', icon: FlaskConical }
-      ]
-    },
-    {
-      title: 'MBA & COMMERCIAL',
-      items: [
-        { id: 'planner' as PageId, label: 'Business Planner', icon: Calculator },
-        { id: 'discovery' as PageId, label: 'Customer Discovery', icon: Users2 },
-        { id: 'pilots' as PageId, label: 'Pilot Experiments', icon: GitBranch }
       ]
     },
     {

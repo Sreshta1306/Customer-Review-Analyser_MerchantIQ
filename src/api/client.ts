@@ -162,8 +162,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
-    if (!res.ok) throw new Error('Failed to import reviews');
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) {
+      const details = data.errors?.length
+        ? ` ${data.errors.map((error: { row: number; field: string; message: string }) => `Row ${error.row}, ${error.field}: ${error.message}`).join('; ')}`
+        : '';
+      throw new Error((data.error || 'Failed to import reviews') + details);
+    }
+    return data;
   },
 
   async resolveDuplicate(
@@ -262,9 +268,36 @@ export const api = {
     return res.json();
   },
 
+  // Official C01 Dataset Load & Inspection
+  async loadOfficialC01(): Promise<{
+    success: boolean;
+    message: string;
+    added: number;
+    updated: number;
+    total: number;
+    unique_valid: number;
+    confirmed_duplicates: number;
+    job: any;
+  }> {
+    const res = await fetch('/api/dataset/load-c01', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!res.ok) throw new Error('Failed to load official C01 dataset');
+    return res.json();
+  },
+
+  async getC01Fixture(): Promise<{ fixture: any }> {
+    const res = await fetch('/api/dataset/c01-fixture');
+    if (!res.ok) throw new Error('Failed to fetch C01 fixture');
+    return res.json();
+  },
+
   // Evaluation
-  async getEvaluationBenchmark(): Promise<{ evaluation: EvaluationSummary }> {
-    const res = await fetch('/api/evaluation/benchmark');
+  async getEvaluationBenchmark(
+    mode: 'c01_official' | 'granular_taxonomy' = 'c01_official'
+  ): Promise<{ evaluation: EvaluationSummary }> {
+    const res = await fetch(`/api/evaluation/benchmark?mode=${mode}`);
     if (!res.ok) throw new Error('Failed to fetch evaluation benchmark');
     return res.json();
   },

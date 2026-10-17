@@ -455,7 +455,11 @@ export const BusinessPlanner: React.FC = () => {
                     {item.department}
                   </td>
                   <td className="py-2.5 px-4 font-mono tabular-nums text-slate-900 font-medium whitespace-nowrap">
-                    ${item.estimated_cost_usd}
+                    {item.currency === 'INR' || item.cost_inr ? (
+                      <span className="text-emerald-700 font-semibold">₹{item.cost_inr}</span>
+                    ) : (
+                      <span>${item.estimated_cost_usd}</span>
+                    )}
                   </td>
                   <td className="py-2.5 px-4 font-mono tabular-nums whitespace-nowrap">
                     {item.implementation_time_days} days

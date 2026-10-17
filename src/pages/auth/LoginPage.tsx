@@ -13,6 +13,7 @@ import {
   ArrowRight,
   AlertCircle,
   Loader2,
+  Sparkles,
   CheckCircle2
 } from 'lucide-react';
 
@@ -90,6 +91,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }
   };
 
+  const handleFillDemo = () => {
+    setEmail('quality.lead@merchantiq.com');
+    setPassword('MerchantIQ@2026');
+    setEmailError(null);
+    setPasswordError(null);
+    setErrorMessage(null);
+  };
+
   return (
     <AuthLayout mode="login">
       <div className="space-y-6">
@@ -103,6 +112,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 Merchant Portal
               </span>
             </div>
+            <button
+              type="button"
+              onClick={handleFillDemo}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#635BFF] bg-indigo-50/70 hover:bg-indigo-100/70 border border-indigo-200/60 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+              title="Click to pre-fill verified demo credentials"
+            >
+              <Sparkles className="w-3 h-3 text-[#635BFF]" />
+              <span>Demo Login</span>
+            </button>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-[#172033]">
             Welcome back

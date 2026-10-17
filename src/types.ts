@@ -10,7 +10,6 @@ export type IssueCategory =
   | 'packaging_problems'
   | 'functional_failures'
   | 'delivery_related_issues'
-  | 'customer_support'
   | 'other'
   | 'uncertain';
 
@@ -29,13 +28,12 @@ export interface Review {
   review_text: string;
   rating: number;
   created_at: string;
+  evaluation_expected_topics?: string[];
   sentiment?: 'positive' | 'neutral' | 'negative' | 'mixed';
   issues: IssueLabel[];
   analysis_method?: 'gemini_ai' | 'deterministic_rules' | 'manual_override' | 'unprocessed';
   analyzed_at?: string;
   needs_human_review?: boolean;
-  /** Evaluation-only ground truth; never sent to the analysis model. */
-  evaluation_expected_topics?: string[];
   duplicate_of?: string; // ID of original review if confirmed duplicate
   is_duplicate_candidate?: boolean;
   duplicate_similarity?: number;
@@ -97,6 +95,8 @@ export interface CorrectiveAction {
   priority: 'P0 - Critical' | 'P1 - High' | 'P2 - Medium' | 'P3 - Low';
   severity: SeverityLevel;
   estimated_cost_usd: number;
+  estimated_cost_inr?: number;
+  cost_currency?: 'INR' | 'USD';
   expected_benefit: string;
   status: ActionStatus;
   due_date: string;
@@ -157,21 +157,24 @@ export interface AuditLogEntry {
   details: string;
 }
 
+export type C01ReferenceTopic = 'quality' | 'delivery' | 'size' | 'packaging' | 'support';
+
 export interface EvaluationRecord {
   review_id: string;
   review_text: string;
   product_id: string;
-  ground_truth_labels: IssueCategory[];
-  predicted_labels: IssueCategory[];
+  ground_truth_labels: string[];
+  predicted_labels: string[];
   is_exact_match: boolean;
-  recovered_labels: IssueCategory[];
-  false_positives: IssueCategory[];
-  false_negatives: IssueCategory[];
+  recovered_labels: string[];
+  false_positives: string[];
+  false_negatives: string[];
   disagreement_notes?: string;
 }
 
 export interface EvaluationSummary {
   run_at: string;
+  evaluation_mode: 'c01_official' | 'granular_taxonomy';
   total_samples: number;
   target_recovery_threshold: number; // 16
   recovered_label_count: number; // total agreed labels recovered
@@ -180,8 +183,9 @@ export interface EvaluationSummary {
   precision: number;
   recall: number;
   f1_score: number;
+  taxonomy_mapping_notes?: string;
   category_metrics: {
-    category: IssueCategory;
+    category: string;
     support: number;
     true_positives: number;
     false_positives: number;
@@ -255,6 +259,8 @@ export interface ActionCostAssumption {
   action_type: string;
   department: TeamDepartment;
   estimated_cost_usd: number;
+  cost_inr?: number;
+  currency?: 'INR' | 'USD';
   implementation_time_days: number;
   expected_return_reduction_pct: number;
   description: string;

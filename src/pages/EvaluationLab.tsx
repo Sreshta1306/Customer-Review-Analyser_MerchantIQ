@@ -20,15 +20,16 @@ export const EvaluationLab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [filterDisagreementsOnly, setFilterDisagreementsOnly] = useState(false);
+  const [evalMode, setEvalMode] = useState<'c01_official' | 'granular_taxonomy'>('c01_official');
 
   useEffect(() => {
-    loadEvaluation();
-  }, []);
+    loadEvaluation(evalMode);
+  }, [evalMode]);
 
-  const loadEvaluation = async () => {
+  const loadEvaluation = async (mode: 'c01_official' | 'granular_taxonomy' = evalMode) => {
     try {
       setLoading(true);
-      const res = await api.getEvaluationBenchmark();
+      const res = await api.getEvaluationBenchmark(mode);
       setEvaluation(res.evaluation);
     } catch (err) {
       console.error('Failed to load evaluation benchmark:', err);
@@ -40,7 +41,7 @@ export const EvaluationLab: React.FC = () => {
   const handleRunBenchmark = async () => {
     try {
       setRunning(true);
-      const res = await api.getEvaluationBenchmark();
+      const res = await api.getEvaluationBenchmark(evalMode);
       setEvaluation(res.evaluation);
     } catch (err) {
       alert('Failed to run benchmark');
@@ -57,7 +58,7 @@ export const EvaluationLab: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `case_c01_evaluation_benchmark_${Date.now()}.json`;
+    a.download = `case_c01_evaluation_benchmark_${evalMode}_${Date.now()}.json`;
     a.click();
   };
 
@@ -84,16 +85,40 @@ export const EvaluationLab: React.FC = () => {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Validation engine assessing multi-label recovery, precision, recall, and edge-case classification accuracy.
+            Validation engine assessing multi-label recovery, precision, recall, and edge-case classification accuracy against official reference labels.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
+            <button
+              onClick={() => setEvalMode('c01_official')}
+              className={`px-3 py-1 rounded-md font-semibold transition-colors ${
+                evalMode === 'c01_official'
+                  ? 'bg-white text-indigo-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              C01 Official 5-Topic Mode
+            </button>
+            <button
+              onClick={() => setEvalMode('granular_taxonomy')}
+              className={`px-3 py-1 rounded-md font-semibold transition-colors ${
+                evalMode === 'granular_taxonomy'
+                  ? 'bg-white text-indigo-700 shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Granular 11-Category Mode
+            </button>
+          </div>
+
           <button
             onClick={handleExportJson}
             className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1.5"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export Benchmark</span>
+            <span>Export JSON</span>
           </button>
           <button
             onClick={handleRunBenchmark}
@@ -150,6 +175,28 @@ export const EvaluationLab: React.FC = () => {
             <span className="text-2xl font-bold font-mono text-slate-900 tabular-nums">
               {(evaluation.f1_score * 100).toFixed(0)}%
             </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Methodology & Taxonomy Adapter Explanation */}
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 leading-relaxed space-y-2">
+        <div className="flex items-center gap-2 text-slate-800 font-bold">
+          <FileCheck className="w-4 h-4 text-indigo-600" />
+          <span>Evaluation Methodology & Multi-Label Matching Policy</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-[11px] pt-1">
+          <div className="bg-white p-3 rounded-lg border border-slate-200">
+            <span className="font-semibold text-slate-900 block mb-0.5">1. Evaluation Denominator</span>
+            <span>Fixed benchmark of 20 official judge-labelled reviews (R001–R020). Predictions are generated from raw review text independently without reference label leakage.</span>
+          </div>
+          <div className="bg-white p-3 rounded-lg border border-slate-200">
+            <span className="font-semibold text-slate-900 block mb-0.5">2. Multi-Label Policy</span>
+            <span>A review mentioning multiple distinct defects (e.g. R001 with both Damage and Sizing) is evaluated against each expected topic separately. Label set exact match requires identical topic sets.</span>
+          </div>
+          <div className="bg-white p-3 rounded-lg border border-slate-200">
+            <span className="font-semibold text-slate-900 block mb-0.5">3. Taxonomy Adapter</span>
+            <span>Granular defect categories (e.g. broken zipper, seam tear, damaged glass) map directly into the 5 C01 reference topics: <code>quality</code>, <code>delivery</code>, <code>size</code>, <code>packaging</code>, and <code>support</code>.</span>
           </div>
         </div>
       </div>

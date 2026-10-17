@@ -6,6 +6,4 @@ coverage/
 *.log
 .env*
 !.env.example
-
-# Local file-backed database contains demo credentials and operational records.
-data/merchant_intelligence_db.json
+data/

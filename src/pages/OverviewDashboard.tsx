@@ -115,6 +115,24 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
         </div>
         <div className="flex items-center gap-2">
           <button
+            onClick={async () => {
+              try {
+                setLoading(true);
+                const res = await api.loadOfficialC01();
+                alert(`Official C01 Dataset Loaded Successfully!\nTotal: ${res.total} records (19 unique, 1 duplicate).\nSource: Starter_Data/C01/fixture.json`);
+                await loadDashboard();
+              } catch (err: any) {
+                alert(`Error loading C01 dataset: ${err.message}`);
+              } finally {
+                setLoading(false);
+              }
+            }}
+            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Load Official C01 Dataset</span>
+          </button>
+          <button
             onClick={() => onNavigate('explorer')}
             className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
           >
@@ -125,6 +143,35 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
             className="px-3.5 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors flex items-center gap-1.5"
           >
             <span>Action Center</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Case C01 Public Checks & Reconciled Verification Card */}
+      <div className="bg-gradient-to-r from-indigo-50/80 via-white to-slate-50 p-4 rounded-xl border border-indigo-100 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-indigo-600 text-white rounded-lg shrink-0">
+            <ShieldAlert className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-slate-900">Case C01: Review to Action Merchant Copilot</span>
+              <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-800 rounded-full">
+                Active Benchmark Fixture
+              </span>
+            </div>
+            <p className="text-slate-600 mt-1">
+              Dataset: <code>Starter_Data/C01/fixture.json</code> &bull; Currency: <strong>INR (₹)</strong> &bull; Reconciled: <strong>{stats.valid_unique_reviews} unique reviews</strong> (1 confirmed duplicate R005 non-inflated).
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => onNavigate('evaluation')}
+            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
+          >
+            <span>Evaluation Lab</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>

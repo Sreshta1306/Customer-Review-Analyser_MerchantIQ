@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
-import { parseImportText } from '../import/parsing';
 import { Review, IssueCategory, SeverityLevel } from '../types';
 import { SeverityBadge, MethodBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
@@ -18,7 +17,8 @@ import {
   ShieldCheck,
   Check,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Sparkles
 } from 'lucide-react';
 
 export const ReviewExplorer: React.FC = () => {
@@ -111,19 +111,44 @@ export const ReviewExplorer: React.FC = () => {
     try {
       setIsImporting(true);
       setImportStatus(null);
-      const parsed = parseImportText(importText);
-      if (parsed.rejectedRows.length > 0 && parsed.records.length === 0) {
-        throw new Error(parsed.rejectedRows.map((row) => `Row ${row.row}: ${row.message}`).join('; '));
+      let records: any[] = [];
+
+      // Detect JSON vs CSV
+      if (importText.trim().startsWith('[') || importText.trim().startsWith('{')) {
+        const parsed = JSON.parse(importText);
+        if (Array.isArray(parsed)) {
+          records = parsed;
+        } else if (Array.isArray(parsed.reviews)) {
+          records = parsed.reviews;
+        } else if (Array.isArray(parsed.records?.reviews)) {
+          records = parsed.records.reviews;
+        } else if (Array.isArray(parsed.records)) {
+          records = parsed.records;
+        } else {
+          records = [parsed];
+        }
+      } else {
+        // Parse CSV
+        const lines = importText.split('\n').filter((l) => l.trim().length > 0);
+        if (lines.length > 1) {
+          const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+          for (let i = 1; i < lines.length; i++) {
+            // Basic CSV row parsing
+            const cols = lines[i].split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+            const row: any = {};
+            headers.forEach((h, idx) => {
+              row[h] = cols[idx];
+            });
+            records.push(row);
+          }
+        }
       }
 
       const res = await api.importReviews({
         filename: importFileName || 'uploaded_reviews.json',
-        records: parsed.records,
+        records,
         auto_analyze: true
       });
-      if (parsed.rejectedRows.length > 0) {
-        res.parse_warnings = parsed.rejectedRows;
-      }
       setImportStatus(res);
       fetchReviews();
     } catch (err: any) {
@@ -157,7 +182,6 @@ R103,PROD-UNKNOWN,Unknown Item,2,"Fabric was totally see through and sizing ran 
     'functional_failures',
     'delivery_related_issues',
     'other',
-    'customer_support',
     'uncertain'
   ];
 
@@ -187,6 +211,24 @@ R103,PROD-UNKNOWN,Unknown Item,2,"Fabric was totally see through and sizing ran 
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              try {
+                setLoading(true);
+                const res = await api.loadOfficialC01();
+                alert(`Loaded Official C01 Dataset (${res.total} reviews, 19 unique, 1 duplicate).\nSource: Starter_Data/C01/fixture.json`);
+                await fetchReviews();
+              } catch (err: any) {
+                alert(`Failed to load C01 dataset: ${err.message}`);
+              } finally {
+                setLoading(false);
+              }
+            }}
+            className="px-3 py-1.5 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Load Official C01</span>
+          </button>
           <button
             onClick={handleDownloadSampleCsv}
             className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1.5"
@@ -544,7 +586,18 @@ R103,PROD-UNKNOWN,Unknown Item,2,"Fabric was totally see through and sizing ran 
                   <div>Error: {importStatus.error}</div>
                 ) : (
                   <div>
-                    Imported <strong>{importStatus.job?.valid_rows}</strong> valid reviews! (Added: {importStatus.added}, Reconciled: {importStatus.updated}).
+                    Imported <strong>{importStatus.job?.valid_rows}</strong> valid reviews
+                    {' '}(Added: {importStatus.added}, Reconciled: {importStatus.updated}, Rejected: {importStatus.job?.invalid_rows || 0}).
+                    {importStatus.job?.duplicate_candidates > 0 && (
+                      <div>Duplicate candidates: {importStatus.job.duplicate_candidates}</div>
+                    )}
+                    {importStatus.job?.errors?.length > 0 && (
+                      <ul className="mt-1 list-disc pl-4">
+                        {importStatus.job.errors.slice(0, 5).map((error: { row: number; field: string; message: string }) => (
+                          <li key={`${error.row}-${error.field}`}>Row {error.row}, {error.field}: {error.message}</li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 )}
               </div>

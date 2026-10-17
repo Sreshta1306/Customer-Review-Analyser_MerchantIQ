@@ -1,6 +1,6 @@
 import React from 'react';
 import { PageId } from './Sidebar';
-import { RefreshCw, Play, Sparkles, LogOut, User } from 'lucide-react';
+import { RefreshCw, Play, Sparkles, LogOut, User, Download } from 'lucide-react';
 import { UserAccount } from '../../types';
 
 interface TopBarProps {
@@ -78,6 +78,16 @@ export const TopBar: React.FC<TopBarProps> = ({
           <Sparkles className="w-3.5 h-3.5 text-amber-600" />
           Judge Walkthrough
         </button>
+
+        <a
+          href="/api/download-zip"
+          download="merchantiq-intelligence-platform.zip"
+          title="Download complete codebase ZIP archive"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition-colors cursor-pointer shadow-2xs whitespace-nowrap"
+        >
+          <Download className="w-3.5 h-3.5 text-indigo-600" />
+          <span className="hidden md:inline">Download</span> ZIP
+        </a>
 
         <button
           onClick={onRunAnalysis}

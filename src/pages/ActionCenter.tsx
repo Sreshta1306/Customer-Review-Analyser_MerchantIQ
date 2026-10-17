@@ -253,7 +253,11 @@ export const ActionCenter: React.FC<ActionCenterProps> = ({ onNavigate }) => {
                     </td>
 
                     <td className="py-3 px-4 whitespace-nowrap font-mono tabular-nums text-slate-800">
-                      ${act.estimated_cost_usd}
+                      {act.cost_currency === 'INR' || act.estimated_cost_inr ? (
+                        <span className="text-emerald-700 font-semibold">₹{act.estimated_cost_inr || act.estimated_cost_usd}</span>
+                      ) : (
+                        <span>${act.estimated_cost_usd}</span>
+                      )}
                     </td>
 
                     <td className="py-3 px-4 whitespace-nowrap">
@@ -405,6 +409,45 @@ export const ActionCenter: React.FC<ActionCenterProps> = ({ onNavigate }) => {
           maxWidth="lg"
         >
           <div className="space-y-4">
+            {/* Quick C01 Preset Pickers */}
+            <div className="bg-indigo-50/60 p-3 rounded-lg border border-indigo-100">
+              <span className="text-[11px] font-semibold text-indigo-900 block mb-1.5">
+                Official Case C01 Cost Assumption Presets:
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewTitle('Inspect Zipper Sample Batch (C01)');
+                    setNewCategory('manufacturing_defects');
+                    setNewActionText('inspect zipper sample');
+                    setNewTeam('Supplier Management');
+                    setNewPriority('P1 - High');
+                    setNewCost(1000);
+                    setNewProducts('PROD-JACKET-12');
+                  }}
+                  className="px-2.5 py-1 text-xs bg-white text-indigo-700 border border-indigo-200 rounded-md font-medium hover:bg-indigo-50 transition-colors shadow-2xs"
+                >
+                  inspect zipper sample (₹1,000)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewTitle('Review Sizing Guide Calibration (C01)');
+                    setNewCategory('incorrect_sizing');
+                    setNewActionText('review size guide');
+                    setNewTeam('Product Management');
+                    setNewPriority('P2 - Medium');
+                    setNewCost(500);
+                    setNewProducts('PROD-SHOE-01, PROD-SHIRT-05');
+                  }}
+                  className="px-2.5 py-1 text-xs bg-white text-indigo-700 border border-indigo-200 rounded-md font-medium hover:bg-indigo-50 transition-colors shadow-2xs"
+                >
+                  review size guide (₹500)
+                </button>
+              </div>
+            </div>
+
             <div>
               <label className="text-xs font-semibold text-slate-800 block mb-1">
                 Action Title / Defect Summary:

@@ -36,6 +36,28 @@ export const INITIAL_BUSINESS_ASSUMPTIONS: BusinessPlanAssumptions = {
 
 export const ACTION_COST_TABLE: ActionCostAssumption[] = [
   {
+    id: 'AC-C01-01',
+    action_type: 'inspect zipper sample',
+    department: 'Supplier Management',
+    estimated_cost_usd: 12,
+    cost_inr: 1000,
+    currency: 'INR',
+    implementation_time_days: 2,
+    expected_return_reduction_pct: 45,
+    description: 'Official C01 Assumption: Dispatch batch sample zipper pull and teeth alignment test at supplier facility (₹1,000).'
+  },
+  {
+    id: 'AC-C01-02',
+    action_type: 'review size guide',
+    department: 'Product Management',
+    estimated_cost_usd: 6,
+    cost_inr: 500,
+    currency: 'INR',
+    implementation_time_days: 1,
+    expected_return_reduction_pct: 30,
+    description: 'Official C01 Assumption: Fit model measurement audit and digital garment sizing chart revision (₹500).'
+  },
+  {
     id: 'AC-01',
     action_type: 'Batch Supplier Quality Audit',
     department: 'Supplier Management',

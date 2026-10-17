@@ -1,20 +1,22 @@
+import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
 import { db, ImportJob, hashPassword, UserRecord } from './src/server/db';
-import { classifyReview, runEvaluationBenchmark, ALLOWED_CATEGORIES } from './src/server/classifier';
+import {
+  classifyReview,
+  runEvaluationBenchmark,
+  ALLOWED_CATEGORIES,
+  isGeminiConfigured
+} from './src/server/classifier';
 import { Review, CorrectiveAction, DecisionVersion } from './src/types';
-import { normalizeImportPayload } from './src/import/parsing';
-
-dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
-const port = Number(process.env.PORT || 3000);
+const port = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '15mb' }));
 
@@ -38,7 +40,7 @@ app.get('/api/health', (req: Request, res: Response) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    ai_available: Boolean(process.env.GEMINI_API_KEY)
+    ai_available: isGeminiConfigured()
   });
 });
 
@@ -311,30 +313,41 @@ app.patch('/api/reviews/:id', (req: Request, res: Response) => {
 // Import Reviews (CSV or JSON parsed records)
 app.post('/api/reviews/import', async (req: Request, res: Response) => {
   try {
-    const { filename, records: rawRecords, auto_analyze } = req.body;
-    const records = normalizeImportPayload(rawRecords);
-    if (records.length === 0) {
-      return res.status(400).json({ error: 'No review records found. Expected an array or records.reviews.' });
+    const { filename, records, auto_analyze } = req.body;
+    const inputRecords = Array.isArray(records)
+      ? records
+      : Array.isArray(records?.reviews)
+        ? records.reviews
+        : Array.isArray(records?.records?.reviews)
+          ? records.records.reviews
+          : Array.isArray(records?.records)
+            ? records.records
+            : null;
+    if (!inputRecords) {
+      return res.status(400).json({ error: 'No review array found. Expected an array, reviews[], or records.reviews[].' });
     }
 
     const errors: { row: number; field: string; message: string }[] = [];
     const validReviews: Review[] = [];
-    const existing = db.getReviews();
     const seenIdsInBatch = new Set<string>();
+    let duplicateCandidates = 0;
 
-    records.forEach((raw: any, index: number) => {
+    inputRecords.forEach((raw: any, index: number) => {
       const rowNum = index + 1;
-      const reviewId = String(raw.review_id || raw.id || '').trim();
-      const productId = String(raw.product_id || raw.productId || 'PROD-UNKNOWN').trim();
-      const reviewText = String(raw.review_text || raw.text || raw.content || '').trim();
+      const product = raw.product && typeof raw.product === 'object' ? raw.product : {};
+      const reviewId = String(raw.review_id || raw.id || raw.reviewId || '').trim();
+      const productId = String(raw.product_id || raw.productId || product.product_id || product.id || 'PROD-UNKNOWN').trim();
+      const productName = raw.product_name || raw.productName || product.product_name || product.name;
+      const reviewText = String(raw.review_text || raw.text || raw.content || raw.review || '').trim();
       const rating = Number(raw.rating);
-      const createdAt = raw.created_at || raw.date || new Date().toISOString();
+      const createdAt = raw.created_at || raw.createdAt || raw.date || new Date().toISOString();
 
       if (!reviewId) {
         errors.push({ row: rowNum, field: 'review_id', message: 'Missing review_id' });
         return;
       }
       if (seenIdsInBatch.has(reviewId)) {
+        duplicateCandidates++;
         errors.push({ row: rowNum, field: 'review_id', message: `Duplicate review_id in batch: ${reviewId}` });
         return;
       }
@@ -363,18 +376,13 @@ app.post('/api/reviews/import', async (req: Request, res: Response) => {
       validReviews.push({
         review_id: reviewId,
         product_id: productId || 'PROD-UNKNOWN',
-        product_name: typeof raw.product_name === 'string' && raw.product_name.trim()
-          ? raw.product_name.trim()
-          : undefined,
+        product_name: productName || (productId === 'PROD-UNKNOWN' ? 'Unknown Product' : undefined),
         review_text: reviewText,
         rating,
         created_at: validDate,
         issues: raw.issues && Array.isArray(raw.issues) ? raw.issues : [],
         analysis_method: raw.analysis_method || 'unprocessed',
-        needs_human_review: false,
-        evaluation_expected_topics: Array.isArray(raw.expected_topics)
-          ? raw.expected_topics.map((topic: unknown) => String(topic))
-          : undefined
+        needs_human_review: false
       });
     });
 
@@ -396,13 +404,25 @@ app.post('/api/reviews/import', async (req: Request, res: Response) => {
       job_id: `JOB-${Date.now()}`,
       filename: filename || 'manual_import.json',
       imported_at: new Date().toISOString(),
-      total_rows: records.length,
+      total_rows: inputRecords.length,
       valid_rows: validReviews.length,
       invalid_rows: errors.length,
-      duplicate_candidates: 0,
+      duplicate_candidates: duplicateCandidates,
       status: errors.length === 0 ? 'completed' : validReviews.length > 0 ? 'partial' : 'failed',
       errors
     };
+
+    if (validReviews.length === 0) {
+      return res.status(422).json({
+        success: false,
+        error: inputRecords.length === 0 ? 'No review records were found in the uploaded file.' : 'No valid reviews could be imported.',
+        job,
+        added: 0,
+        updated: 0,
+        total_in_db: db.getReviews().length,
+        errors
+      });
+    }
 
     const importResult = db.importReviews(validReviews, job);
 
@@ -412,8 +432,7 @@ app.post('/api/reviews/import', async (req: Request, res: Response) => {
       added: importResult.added,
       updated: importResult.updated,
       total_in_db: importResult.total,
-      errors,
-      parse_warnings: Array.isArray(req.body.parse_warnings) ? req.body.parse_warnings : []
+      errors
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -622,11 +641,41 @@ app.get('/api/audit-log', (req: Request, res: Response) => {
   res.json({ logs: db.getAuditLogs() });
 });
 
+// Load Official C01 Dataset (20 judge-labelled reviews, idempotent, non-destructive)
+app.post('/api/dataset/load-c01', (req: Request, res: Response) => {
+  try {
+    const result = db.loadOfficialC01();
+    res.json({
+      success: true,
+      message: 'Official C01 dataset (20 reviews) loaded successfully.',
+      ...result
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get Official C01 Fixture Raw Metadata
+app.get('/api/dataset/c01-fixture', (req: Request, res: Response) => {
+  try {
+    const fixturePath = path.resolve(process.cwd(), 'Starter_Data/C01/fixture.json');
+    if (fs.existsSync(fixturePath)) {
+      const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf-8'));
+      res.json({ fixture });
+    } else {
+      res.status(404).json({ error: 'C01 fixture file not found' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Evaluation Lab Benchmark (Calculates Precision, Recall, F1, exact-match, agreed labels against 20 ground truth judge reviews)
 app.get('/api/evaluation/benchmark', (req: Request, res: Response) => {
   try {
+    const mode = (req.query.mode as string) === 'granular_taxonomy' ? 'granular_taxonomy' : 'c01_official';
     const reviews = db.getReviews();
-    const evaluation = runEvaluationBenchmark(reviews);
+    const evaluation = runEvaluationBenchmark(reviews, mode);
     res.json({ evaluation });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

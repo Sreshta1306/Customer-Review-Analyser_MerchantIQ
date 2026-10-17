@@ -51,34 +51,107 @@ Instead of generic word clouds or vanity sentiment charts, the platform answers 
 
 ---
 
-## 4. Quick Start & Setup
+## 4. Quick Start (Docker on Windows)
 
 ### Prerequisites
-- Node.js 20.19+ (the project uses Vite 8)
-- Bun (the repository includes `bun.lock`)
 
-### Installation
-```bash
-# Install dependencies from the existing Bun lockfile (works without Bun on PATH)
-npx --yes bun install
+- Docker Desktop for Windows with the Linux container engine enabled.
+- PowerShell.
+- The extracted project directory, including the existing `data\merchant_intelligence_db.json`.
+
+Docker is the supported deployment path. The application uses one container: Express serves both the production Vite build and all `/api/*` endpoints.
+
+### Configure the environment
+
+From PowerShell in the project directory, create the local environment file:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
 ```
 
-### Environment Variables
-Copy `.env.example` to `.env` if you need to set a variable. The app runs without `.env` using port 3000 and rule-based analysis.
-Key variables:
-- `GEMINI_API_KEY`: Optional. Without it, review analysis uses the deterministic rules engine.
-- `PORT`: Optional; defaults to 3000.
-- `GOOGLE_CLIENT_ID`: Optional; Google sign-in is not fully implemented by the current API.
+Set `GEMINI_API_KEY` to the key from Google AI Studio if Gemini analysis is wanted. Leave it blank to use the deterministic rules engine. `GOOGLE_CLIENT_ID` is optional and can remain blank for email/password authentication. `.env` is ignored by Git; never put a real key in `.env.example` or frontend source.
 
-### Development
-```bash
+### Build and launch
+
+```powershell
+docker compose build
+docker compose up -d
+```
+
+Open the application at [http://localhost:3000](http://localhost:3000). The health endpoint is [http://localhost:3000/api/health](http://localhost:3000/api/health).
+
+Useful lifecycle commands:
+
+```powershell
+# Follow application logs
+docker compose logs -f merchantiq
+
+# Stop containers but keep the container and all data
+docker compose stop
+
+# Stop and remove containers/networks, but keep the ./data files
+docker compose down
+
+# Start again without rebuilding
+docker compose up -d
+```
+
+Do not use `docker compose down -v` for normal operation. This Compose configuration uses a bind mount from the project’s `data\` directory to `/app/data`, so the actual JSON database remains on the Windows host at `data\merchant_intelligence_db.json`. Stopping or removing containers does not delete it. Deleting or replacing that file is destructive.
+
+### Back up and restore
+
+Stop the service before copying the file to avoid capturing a write in progress:
+
+```powershell
+docker compose stop
+Copy-Item .\data\merchant_intelligence_db.json .\backups\merchant_intelligence_db_$(Get-Date -Format yyyyMMdd-HHmmss).json
+docker compose up -d
+```
+
+To restore a backup, keep the original file until the replacement is verified:
+
+```powershell
+docker compose stop
+Copy-Item .\data\merchant_intelligence_db.json .\data\merchant_intelligence_db.before-restore.json
+Copy-Item .\backups\merchant_intelligence_db_YYYYMMDD-HHMMSS.json .\data\merchant_intelligence_db.json -Force
+docker compose up -d
+```
+
+The application creates `data\` and initializes the database only when the JSON file is absent or unreadable. It does not reseed an existing database on startup. The `POST /api/reset-demo` endpoint is an explicit application feature and should not be used when preserving user data.
+
+### Verify AI analysis
+
+`GET /api/health` reports whether the Gemini client was configured at startup; it does not claim that a request succeeded. Run an analysis from the application or call the API with a review ID:
+
+```powershell
+$body = @{ review_ids = @("R001"); force_reanalyze = $true } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/analyze -ContentType "application/json" -Body $body
+```
+
+Inspect the returned review’s `analysis_method`. A successful Gemini response is `gemini_ai`; unavailable, invalid, timed-out, or failed Gemini requests use `deterministic_rules`. The fallback preserves the existing issue categories, severity, evidence validation, duplicate handling, and human-review flags.
+
+### Troubleshooting
+
+- **Port 3000 is already in use:** stop the conflicting process or change both the host side of the Compose port mapping and `PORT`, then rebuild/recreate the service.
+- **The container exits immediately:** run `docker compose logs merchantiq`; common causes are a failed image build or an unreadable `data\merchant_intelligence_db.json`.
+- **Changes to source are not visible:** run `docker compose build --no-cache` followed by `docker compose up -d`.
+- **Gemini is not used:** verify `GEMINI_API_KEY` in `.env`, recreate the container with `docker compose up -d --force-recreate`, and check `analysis_method`; the application intentionally falls back instead of failing.
+- **Permission errors on data:** ensure Docker Desktop can access the project directory under Settings > Resources > File sharing.
+
+## 5. Local development without Docker
+
+```powershell
+npm install
+Copy-Item .env.example .env
 npm run dev
 ```
-The server will start at `http://localhost:3000`.
 
-### Production Build
-```bash
+The development server runs at `http://localhost:3000` with Vite middleware. For a production-like local run:
+
+```powershell
 npm run build
+$env:NODE_ENV = "production"
 npm start
 ```
 
@@ -107,3 +180,10 @@ npm start
 - `GET /api/export/csv` — Formula-sanitized CSV export
 - `GET /api/export/json` — Full JSON export
 - `POST /api/reset-demo` — Restore 20-review starter fixture
+
+## 6. Docker implementation details
+
+- `Dockerfile` uses Node.js 22 LTS, a build stage for the Vite bundle, and a non-root `node` user in the production stage.
+- `compose.yaml` runs one `merchantiq` service on host port 3000 and maps `./data` to `/app/data`.
+- `GEMINI_API_KEY` is passed only to the backend container at runtime. It is never a Vite variable and is not bundled into browser code.
+- The existing Express server continues to serve `dist/index.html` for the SPA and all existing API routes.
