@@ -14,76 +14,46 @@ import {
 } from '../types';
 
 export const auth = {
-  getToken(): string | null {
-    return localStorage.getItem('merchantiq_auth_token');
-  },
-  setSession(token: string, user: UserAccount) {
-    localStorage.setItem('merchantiq_auth_token', token);
-    localStorage.setItem('merchantiq_user', JSON.stringify(user));
-  },
   getUser(): UserAccount | null {
-    try {
-      const u = localStorage.getItem('merchantiq_user');
-      return u ? JSON.parse(u) : null;
-    } catch {
-      return null;
-    }
-  },
-  clearSession() {
-    localStorage.removeItem('merchantiq_auth_token');
-    localStorage.removeItem('merchantiq_user');
+    return null;
   },
   async getMe(): Promise<{ authenticated: boolean; user?: UserAccount }> {
-    const token = this.getToken();
-    if (!token) return { authenticated: false };
     try {
-      const res = await fetch('/api/auth/me', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!res.ok) {
-        this.clearSession();
-        return { authenticated: false };
-      }
+      const res = await fetch('/api/auth/me', { credentials: 'include' });
+      if (!res.ok) return { authenticated: false };
       return res.json();
     } catch {
       return { authenticated: false };
     }
   },
-  async login(payload: { email: string; password: string }): Promise<{ success: boolean; token: string; user: UserAccount }> {
+  async login(payload: { email: string; password: string }): Promise<{ success: boolean; user: UserAccount }> {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to sign in');
-    this.setSession(data.token, data.user);
     return data;
   },
-  async register(payload: { name: string; email: string; store_name: string; password: string }): Promise<{ success: boolean; token: string; user: UserAccount }> {
+  async register(payload: { name: string; email: string; store_name: string; password: string }): Promise<{ success: boolean; user: UserAccount }> {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to create account');
-    this.setSession(data.token, data.user);
     return data;
   },
   async logout(): Promise<void> {
-    const token = this.getToken();
-    if (token) {
-      try {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` }
-        });
-      } catch {
-        // Ignore network errors on logout
-      }
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+    } catch {
+      // The server session remains authoritative if the network is unavailable.
     }
-    this.clearSession();
   },
   async getAuthConfig(): Promise<{ google_configured: boolean; google_client_id: string | null }> {
     const res = await fetch('/api/auth/config');

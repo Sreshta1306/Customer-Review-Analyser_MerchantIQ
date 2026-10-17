@@ -26,11 +26,12 @@ import {
   INITIAL_PILOT_EXPERIMENT
 } from './seedData';
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
+const DATA_DIR = path.resolve(process.env.MERCHANTIQ_DATA_DIR || path.join(process.cwd(), 'data'));
 const DB_FILE = path.join(DATA_DIR, 'merchant_intelligence_db.json');
 
 export interface UserRecord {
   user_id: string;
+  workspace_id: string;
   name: string;
   email: string;
   store_name: string;
@@ -59,6 +60,7 @@ export function verifyPassword(password: string, hash: string, salt: string): bo
 
 export interface ImportJob {
   job_id: string;
+  workspace_id?: string;
   filename: string;
   imported_at: string;
   total_rows: number;
@@ -71,6 +73,7 @@ export interface ImportJob {
 
 export interface DatabaseSchema {
   users: UserRecord[];
+  sessions: SessionRecord[];
   reviews: Review[];
   actions: CorrectiveAction[];
   decisions: DecisionVersion[];
@@ -81,6 +84,18 @@ export interface DatabaseSchema {
   businessAssumptions: BusinessPlanAssumptions;
   actionCostTable: ActionCostAssumption[];
   importJobs: ImportJob[];
+  settingsByWorkspace?: Record<string, AppSettings>;
+  businessAssumptionsByWorkspace?: Record<string, BusinessPlanAssumptions>;
+}
+
+export const LEGACY_WORKSPACE_ID = 'legacy-quarantine';
+
+export interface SessionRecord {
+  session_id: string;
+  user_id: string;
+  token_hash: string;
+  created_at: string;
+  expires_at: string;
 }
 
 class Store {
@@ -231,24 +246,9 @@ class Store {
       errors: []
     };
 
-    const demoPassword = 'MerchantIQ@2026';
-    const { hash: demoHash, salt: demoSalt } = hashPassword(demoPassword);
-    const initialUsers: UserRecord[] = [
-      {
-        user_id: 'USR-DEMO-001',
-        name: 'Elena Rostova',
-        email: 'quality.lead@merchantiq.com',
-        store_name: 'Aeroflex Direct',
-        role: 'Merchant Quality Lead',
-        password_hash: demoHash,
-        salt: demoSalt,
-        created_at: '2026-10-15T10:00:00Z',
-        auth_provider: 'password'
-      }
-    ];
-
     return {
-      users: initialUsers,
+      users: [],
+      sessions: [],
       reviews: STARTER_REVIEWS_FIXTURE,
       actions: initialActions,
       decisions: initialDecisions,
@@ -259,6 +259,8 @@ class Store {
       businessAssumptions: INITIAL_BUSINESS_ASSUMPTIONS,
       actionCostTable: ACTION_COST_TABLE,
       importJobs: [initialImportJob]
+      ,settingsByWorkspace: {}
+      ,businessAssumptionsByWorkspace: {}
     };
   }
 
@@ -269,22 +271,19 @@ class Store {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.reviews)) {
-          if (!Array.isArray(parsed.users) || parsed.users.length === 0) {
-            const { hash, salt } = hashPassword('MerchantIQ@2026');
-            parsed.users = [
-              {
-                user_id: 'USR-DEMO-001',
-                name: 'Elena Rostova',
-                email: 'quality.lead@merchantiq.com',
-                store_name: 'Aeroflex Direct',
-                role: 'Merchant Quality Lead',
-                password_hash: hash,
-                salt: salt,
-                created_at: '2026-10-15T10:00:00Z',
-                auth_provider: 'password'
-              }
-            ];
+          if (!Array.isArray(parsed.users)) parsed.users = [];
+          if (!Array.isArray(parsed.sessions)) parsed.sessions = [];
+          parsed.users = parsed.users.map((user: UserRecord) => ({
+            ...user,
+            workspace_id: user.workspace_id || `WS-${user.user_id}`
+          }));
+          if (!parsed.settingsByWorkspace || typeof parsed.settingsByWorkspace !== 'object') {
+            parsed.settingsByWorkspace = {};
           }
+          if (!parsed.businessAssumptionsByWorkspace || typeof parsed.businessAssumptionsByWorkspace !== 'object') {
+            parsed.businessAssumptionsByWorkspace = {};
+          }
+          fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
           return parsed;
         }
       }
@@ -313,15 +312,25 @@ class Store {
   }
 
   // REVIEWS
-  public getReviews(): Review[] {
-    return this.data.reviews;
+  private owned<T extends { workspace_id?: string }>(records: T[], workspaceId?: string): T[] {
+    if (!workspaceId) return records.filter((record) => !record.workspace_id);
+    return records.filter((record) => record.workspace_id === workspaceId);
   }
 
-  public getReviewById(id: string): Review | undefined {
-    return this.data.reviews.find((r) => r.review_id === id);
+  public getReviews(workspaceId?: string): Review[] {
+    return this.owned(this.data.reviews, workspaceId);
   }
 
-  public saveReview(updated: Review): Review {
+  public getQuarantinedReviews(): Review[] {
+    return this.getReviews();
+  }
+
+  public getReviewById(id: string, workspaceId?: string): Review | undefined {
+    return this.getReviews(workspaceId).find((r) => r.review_id === id);
+  }
+
+  public saveReview(updated: Review, workspaceId?: string): Review {
+    if (workspaceId) updated.workspace_id = workspaceId;
     const idx = this.data.reviews.findIndex((r) => r.review_id === updated.review_id);
     if (idx >= 0) {
       this.data.reviews[idx] = updated;
@@ -336,9 +345,10 @@ class Store {
     reviewId: string,
     issues: Review['issues'],
     notes?: string,
-    user?: string
+    user?: string,
+    workspaceId?: string
   ): Review | undefined {
-    const r = this.getReviewById(reviewId);
+    const r = this.getReviewById(reviewId, workspaceId);
     if (!r) return undefined;
     const oldCategories = r.issues.map((i) => i.category).join(', ');
     r.issues = issues;
@@ -362,18 +372,19 @@ class Store {
     return r;
   }
 
-  public importReviews(newReviews: Review[], job: ImportJob): { added: number; updated: number; total: number } {
+  public importReviews(newReviews: Review[], job: ImportJob, workspaceId?: string): { added: number; updated: number; total: number } {
     let added = 0;
     let updated = 0;
 
     // Detect duplicate candidates based on text similarity or identical IDs
     const existingMap = new Map<string, Review>();
-    this.data.reviews.forEach((r) => existingMap.set(r.review_id, r));
+    this.getReviews(workspaceId).forEach((r) => existingMap.set(r.review_id, r));
 
     for (const incoming of newReviews) {
+      if (workspaceId) incoming.workspace_id = workspaceId;
       if (existingMap.has(incoming.review_id)) {
         // Update existing record without inflating duplicate counts
-        const idx = this.data.reviews.findIndex((r) => r.review_id === incoming.review_id);
+        const idx = this.data.reviews.findIndex((r) => r.review_id === incoming.review_id && r.workspace_id === workspaceId);
         if (idx >= 0) {
           this.data.reviews[idx] = {
             ...this.data.reviews[idx],
@@ -387,7 +398,7 @@ class Store {
         }
       } else {
         // Check for text-similarity duplicate candidate
-        for (const existing of this.data.reviews) {
+        for (const existing of this.getReviews(workspaceId)) {
           if (
             existing.product_id === incoming.product_id &&
             existing.review_text.trim().toLowerCase() === incoming.review_text.trim().toLowerCase()
@@ -414,10 +425,11 @@ class Store {
       entity_type: 'dataset',
       timestamp: new Date().toISOString(),
       user: 'Merchant User',
-      details: `Imported ${job.filename}: ${added} added, ${updated} reconciled, ${job.duplicate_candidates} duplicates flagged.`
+      details: `Imported ${job.filename}: ${added} added, ${updated} reconciled, ${job.duplicate_candidates} duplicates flagged.`,
+      workspace_id: workspaceId
     });
 
-    return { added, updated, total: this.data.reviews.length };
+    return { added, updated, total: this.getReviews(workspaceId).length };
   }
 
   // OFFICIAL C01 DATASET LOADER (Idempotent, preserves R001-R020 IDs, separates predictions from reference labels)
@@ -503,8 +515,8 @@ class Store {
   }
 
   // DUPLICATE RESOLUTION
-  public resolveDuplicate(reviewId: string, markAsDuplicate: boolean, user?: string): Review | undefined {
-    const r = this.getReviewById(reviewId);
+  public resolveDuplicate(reviewId: string, markAsDuplicate: boolean, user?: string, workspaceId?: string): Review | undefined {
+    const r = this.getReviewById(reviewId, workspaceId);
     if (!r) return undefined;
 
     const oldStatus = r.duplicate_of ? 'Duplicate' : 'Distinct';
@@ -527,14 +539,15 @@ class Store {
       previous_value: oldStatus,
       new_value: markAsDuplicate ? 'Duplicate' : 'Distinct',
       details: `Resolved duplicate status for ${reviewId}`
+      ,workspace_id: workspaceId
     });
 
     return r;
   }
 
   // AGGREGATIONS & METRICS (Respects unique counting rules)
-  public getUniqueReviewStats() {
-    const all = this.data.reviews;
+  public getUniqueReviewStats(workspaceId?: string) {
+    const all = this.getReviews(workspaceId);
     const confirmedDuplicates = all.filter((r) => r.duplicate_of && r.is_duplicate_candidate);
     const suspectedDuplicates = all.filter((r) => r.is_duplicate_candidate && !r.duplicate_of);
     const uniqueReviews = all.filter((r) => !r.duplicate_of);
@@ -547,7 +560,7 @@ class Store {
     };
   }
 
-  public getIssuesSummary(): IssueSummary[] {
+  public getIssuesSummary(workspaceId?: string): IssueSummary[] {
     const categoryMap = new Map<
       IssueCategory,
       {
@@ -576,7 +589,7 @@ class Store {
 
     // Counting rule: A review mentioning 2 issues counts once in each category, but once overall.
     // Exclude confirmed duplicates from inflating counts or triggering actions!
-    const activeReviews = this.data.reviews.filter((r) => !r.duplicate_of);
+    const activeReviews = this.getReviews(workspaceId).filter((r) => !r.duplicate_of);
 
     for (const review of activeReviews) {
       for (const issue of review.issues) {
@@ -769,7 +782,7 @@ class Store {
     return summaries.sort((a, b) => b.priority_score - a.priority_score);
   }
 
-  public getProductsSummary() {
+  public getProductsSummary(workspaceId?: string) {
     const productMap = new Map<
       string,
       {
@@ -791,7 +804,7 @@ class Store {
       uncertain: 0
     };
 
-    const activeReviews = this.data.reviews.filter((r) => !r.duplicate_of);
+    const activeReviews = this.getReviews(workspaceId).filter((r) => !r.duplicate_of);
 
     for (const r of activeReviews) {
       const pid = r.product_id || 'PROD-UNKNOWN';
@@ -828,7 +841,7 @@ class Store {
     const result = Array.from(productMap.values()).map((p) => {
       const avgRating =
         p.ratings.reduce((a, b) => a + b, 0) / (p.ratings.length || 1);
-      const openActions = this.data.actions.filter(
+      const openActions = this.getActions(workspaceId).filter(
         (a) => a.affected_products.includes(p.product_id) && a.status !== 'Completed'
       );
 
@@ -849,11 +862,12 @@ class Store {
   }
 
   // ACTIONS
-  public getActions(): CorrectiveAction[] {
-    return this.data.actions;
+  public getActions(workspaceId?: string): CorrectiveAction[] {
+    return this.owned(this.data.actions, workspaceId);
   }
 
-  public createAction(action: CorrectiveAction, user?: string): CorrectiveAction {
+  public createAction(action: CorrectiveAction, user?: string, workspaceId?: string): CorrectiveAction {
+    if (workspaceId) action.workspace_id = workspaceId;
     this.data.actions.unshift(action);
     this.save();
 
@@ -874,9 +888,10 @@ class Store {
   public updateAction(
     actionId: string,
     updates: Partial<CorrectiveAction>,
-    user?: string
+    user?: string,
+    workspaceId?: string
   ): CorrectiveAction | undefined {
-    const idx = this.data.actions.findIndex((a) => a.action_id === actionId);
+    const idx = this.data.actions.findIndex((a) => a.action_id === actionId && a.workspace_id === workspaceId);
     if (idx < 0) return undefined;
 
     const old = this.data.actions[idx];
@@ -920,12 +935,13 @@ class Store {
   }
 
   // DECISIONS (Mandatory hackathon side-by-side history preservation)
-  public getDecisions(): DecisionVersion[] {
-    return this.data.decisions;
+  public getDecisions(workspaceId?: string): DecisionVersion[] {
+    return this.owned(this.data.decisions, workspaceId);
   }
 
-  public saveDecision(decision: DecisionVersion, user?: string): DecisionVersion {
-    const idx = this.data.decisions.findIndex((d) => d.decision_id === decision.decision_id);
+  public saveDecision(decision: DecisionVersion, user?: string, workspaceId?: string): DecisionVersion {
+    if (workspaceId) decision.workspace_id = workspaceId;
+    const idx = this.data.decisions.findIndex((d) => d.decision_id === decision.decision_id && d.workspace_id === workspaceId);
     if (idx >= 0) {
       decision.version = this.data.decisions[idx].version + 1;
       this.data.decisions[idx] = decision;
@@ -951,8 +967,8 @@ class Store {
   }
 
   // AUDIT LOGS
-  public getAuditLogs(): AuditLogEntry[] {
-    return this.data.auditLogs.sort(
+  public getAuditLogs(workspaceId?: string): AuditLogEntry[] {
+    return this.owned(this.data.auditLogs, workspaceId).sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
   }
@@ -967,12 +983,13 @@ class Store {
   }
 
   // INTERVIEWS & PILOTS
-  public getInterviews(): CustomerInterview[] {
-    return this.data.interviews;
+  public getInterviews(workspaceId?: string): CustomerInterview[] {
+    return this.owned(this.data.interviews, workspaceId);
   }
 
-  public saveInterview(interview: CustomerInterview): CustomerInterview {
-    const idx = this.data.interviews.findIndex((i) => i.interview_id === interview.interview_id);
+  public saveInterview(interview: CustomerInterview, workspaceId?: string): CustomerInterview {
+    if (workspaceId) interview.workspace_id = workspaceId;
+    const idx = this.data.interviews.findIndex((i) => i.interview_id === interview.interview_id && i.workspace_id === workspaceId);
     if (idx >= 0) {
       this.data.interviews[idx] = interview;
     } else {
@@ -982,12 +999,13 @@ class Store {
     return interview;
   }
 
-  public getPilots(): PilotExperiment[] {
-    return this.data.pilots;
+  public getPilots(workspaceId?: string): PilotExperiment[] {
+    return this.owned(this.data.pilots, workspaceId);
   }
 
-  public savePilot(pilot: PilotExperiment): PilotExperiment {
-    const idx = this.data.pilots.findIndex((p) => p.pilot_id === pilot.pilot_id);
+  public savePilot(pilot: PilotExperiment, workspaceId?: string): PilotExperiment {
+    if (workspaceId) pilot.workspace_id = workspaceId;
+    const idx = this.data.pilots.findIndex((p) => p.pilot_id === pilot.pilot_id && p.workspace_id === workspaceId);
     if (idx >= 0) {
       this.data.pilots[idx] = pilot;
     } else {
@@ -998,12 +1016,15 @@ class Store {
   }
 
   // SETTINGS & BUSINESS
-  public getSettings(): AppSettings {
-    return this.data.settings;
+  public getSettings(workspaceId?: string): AppSettings {
+    if (!workspaceId) return this.data.settings;
+    return this.data.settingsByWorkspace?.[workspaceId] || { ...this.data.settings, workspace_id: workspaceId, workspace_name: '' };
   }
 
-  public updateSettings(settings: Partial<AppSettings>, user?: string): AppSettings {
-    this.data.settings = { ...this.data.settings, ...settings };
+  public updateSettings(settings: Partial<AppSettings>, user?: string, workspaceId?: string): AppSettings {
+    const updated = { ...this.getSettings(workspaceId), ...settings, workspace_id: workspaceId };
+    if (workspaceId) this.data.settingsByWorkspace![workspaceId] = updated;
+    else this.data.settings = updated;
     this.save();
     this.addAuditLog({
       log_id: `AUD-${Date.now()}`,
@@ -1014,19 +1035,23 @@ class Store {
       user: user || 'Merchant Admin',
       details: 'Updated app settings and scoring weights'
     });
-    return this.data.settings;
+    return updated;
   }
 
-  public getBusinessAssumptions(): BusinessPlanAssumptions {
-    return this.data.businessAssumptions;
+  public getBusinessAssumptions(workspaceId?: string): BusinessPlanAssumptions {
+    if (!workspaceId) return this.data.businessAssumptions;
+    return this.data.businessAssumptionsByWorkspace?.[workspaceId] || { ...this.data.businessAssumptions };
   }
 
   public updateBusinessAssumptions(
-    assumptions: Partial<BusinessPlanAssumptions>
+    assumptions: Partial<BusinessPlanAssumptions>,
+    workspaceId?: string
   ): BusinessPlanAssumptions {
-    this.data.businessAssumptions = { ...this.data.businessAssumptions, ...assumptions };
+    const updated = { ...this.getBusinessAssumptions(workspaceId), ...assumptions };
+    if (workspaceId) this.data.businessAssumptionsByWorkspace![workspaceId] = updated;
+    else this.data.businessAssumptions = updated;
     this.save();
-    return this.data.businessAssumptions;
+    return updated;
   }
 
   public getActionCostTable(): ActionCostAssumption[] {
@@ -1064,6 +1089,28 @@ class Store {
     if (!isValid) return null;
     this.updateUserLastLogin(user.user_id);
     return user;
+  }
+
+  public createSession(session: SessionRecord): void {
+    if (!this.data.sessions) this.data.sessions = [];
+    this.data.sessions = this.data.sessions.filter((item) => new Date(item.expires_at).getTime() > Date.now());
+    this.data.sessions.push(session);
+    this.save();
+  }
+
+  public findSessionByTokenHash(tokenHash: string): SessionRecord | undefined {
+    const session = (this.data.sessions || []).find((item) => item.token_hash === tokenHash);
+    if (!session) return undefined;
+    if (new Date(session.expires_at).getTime() <= Date.now()) {
+      this.deleteSession(session.session_id);
+      return undefined;
+    }
+    return session;
+  }
+
+  public deleteSession(sessionId: string): void {
+    this.data.sessions = (this.data.sessions || []).filter((item) => item.session_id !== sessionId);
+    this.save();
   }
 
   // RESET

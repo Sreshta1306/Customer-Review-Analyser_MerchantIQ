@@ -10,7 +10,7 @@
     "start": "tsx server.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx test/c01_checks.ts"
+    "test": "tsx test/isolated_c01.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

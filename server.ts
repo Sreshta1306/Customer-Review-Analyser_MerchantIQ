@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { db, ImportJob, hashPassword, UserRecord } from './src/server/db';
+import { db, ImportJob, hashPassword, UserRecord, SessionRecord } from './src/server/db';
 import {
   classifyReview,
   runEvaluationBenchmark,
@@ -48,29 +48,62 @@ app.get('/api/health', (req: Request, res: Response) => {
 // AUTHENTICATION ENDPOINTS
 // ==========================================
 
-// In-memory active session token map (token -> { userId, expiresAt })
-const activeSessions = new Map<string, { userId: string; expiresAt: number }>();
+const SESSION_COOKIE = 'merchantiq_session';
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 
-function generateSessionToken(userId: string): string {
-  const token = `tok_${crypto.randomBytes(32).toString('hex')}`;
-  // 7 days expiration
-  activeSessions.set(token, {
-    userId,
-    expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000
-  });
-  return token;
+function hashSessionToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-function getUserFromReq(req: Request) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-  const token = authHeader.split(' ')[1];
-  const session = activeSessions.get(token);
-  if (!session || session.expiresAt < Date.now()) {
-    if (session) activeSessions.delete(token);
-    return null;
-  }
-  return db.findUserById(session.userId);
+function getCookie(req: Request, name: string): string | null {
+  const cookies = req.headers.cookie?.split(';') || [];
+  const entry = cookies.map((cookie) => cookie.trim()).find((cookie) => cookie.startsWith(`${name}=`));
+  return entry ? decodeURIComponent(entry.slice(name.length + 1)) : null;
+}
+
+function setSessionCookie(res: Response, token: string): void {
+  const secure = process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false';
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Max-Age=${SESSION_TTL_MS / 1000}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`);
+}
+
+function clearSessionCookie(res: Response): void {
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`);
+}
+
+function getUserFromReq(req: Request): UserRecord | null {
+  const token = getCookie(req, SESSION_COOKIE);
+  if (!token) return null;
+  const session = db.findSessionByTokenHash(hashSessionToken(token));
+  return session ? db.findUserById(session.user_id) || null : null;
+}
+
+function getWorkspaceId(req: Request): string {
+  const user = resLocalsUser(req);
+  return user.workspace_id;
+}
+
+function resLocalsUser(req: Request): UserRecord {
+  const user = (req as Request & { user?: UserRecord }).user;
+  if (!user) throw new Error('Authenticated user context is missing.');
+  return user;
+}
+
+function issueSession(res: Response, userId: string): void {
+  const token = crypto.randomBytes(32).toString('base64url');
+  db.createSession({
+    session_id: crypto.randomUUID(),
+    user_id: userId,
+    token_hash: hashSessionToken(token),
+    created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + SESSION_TTL_MS).toISOString()
+  });
+  setSessionCookie(res, token);
+}
+
+function isSameOrigin(req: Request): boolean {
+  const origin = req.headers.origin;
+  return !origin || origin === `${req.protocol}://${req.get('host')}`;
 }
 
 app.get('/api/auth/config', (req: Request, res: Response) => {
@@ -93,6 +126,7 @@ app.get('/api/auth/me', (req: Request, res: Response) => {
       email: user.email,
       store_name: user.store_name,
       role: user.role,
+      workspace_id: user.workspace_id,
       created_at: user.created_at
     }
   });
@@ -100,17 +134,28 @@ app.get('/api/auth/me', (req: Request, res: Response) => {
 
 app.post('/api/auth/login', (req: Request, res: Response) => {
   try {
+    if (!isSameOrigin(req)) return res.status(403).json({ error: 'Request origin is not allowed.' });
     const { email, password } = req.body;
     if (!email || !password) {
       return res.status(400).json({ error: 'Work email and password are required.' });
     }
 
-    const user = db.verifyCredentials(String(email).trim(), String(password));
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid work email or password. Please check your credentials.' });
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const now = Date.now();
+    const attempt = loginAttempts.get(normalizedEmail);
+    if (attempt && attempt.resetAt > now && attempt.count >= 5) {
+      return res.status(429).json({ error: 'Too many sign-in attempts. Please try again later.' });
     }
+    const user = db.verifyCredentials(normalizedEmail, String(password));
+    if (!user) {
+      const current = attempt && attempt.resetAt > now ? attempt : { count: 0, resetAt: now + 15 * 60 * 1000 };
+      current.count += 1;
+      loginAttempts.set(normalizedEmail, current);
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+    loginAttempts.delete(normalizedEmail);
 
-    const token = generateSessionToken(user.user_id);
+    issueSession(res, user.user_id);
 
     db.addAuditLog({
       log_id: `AUD-${Date.now()}`,
@@ -124,13 +169,13 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
 
     res.json({
       success: true,
-      token,
       user: {
         user_id: user.user_id,
         name: user.name,
         email: user.email,
         store_name: user.store_name,
         role: user.role,
+        workspace_id: user.workspace_id,
         created_at: user.created_at
       }
     });
@@ -141,6 +186,7 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
 
 app.post('/api/auth/register', (req: Request, res: Response) => {
   try {
+    if (!isSameOrigin(req)) return res.status(403).json({ error: 'Request origin is not allowed.' });
     const { name, email, store_name, password } = req.body;
 
     if (!name || String(name).trim().length < 2) {
@@ -156,8 +202,8 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Please enter your business or store name.' });
     }
 
-    if (!password || String(password).length < 8) {
-      return res.status(400).json({ error: 'Password must be at least 8 characters long.' });
+    if (!password || String(password).length < 8 || !/[A-Z]/.test(String(password)) || !/[a-z]/.test(String(password)) || !/[0-9]/.test(String(password))) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters and include uppercase, lowercase, and a number.' });
     }
 
     const normalizedEmail = String(email).trim().toLowerCase();
@@ -169,6 +215,7 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     const { hash, salt } = hashPassword(String(password));
     const newUser: UserRecord = {
       user_id: `USR-${Date.now().toString().slice(-6)}`,
+      workspace_id: `WS-${crypto.randomUUID()}`,
       name: String(name).trim(),
       email: normalizedEmail,
       store_name: String(store_name).trim(),
@@ -180,7 +227,7 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     };
 
     db.createUser(newUser);
-    const token = generateSessionToken(newUser.user_id);
+    issueSession(res, newUser.user_id);
 
     db.addAuditLog({
       log_id: `AUD-${Date.now()}`,
@@ -194,13 +241,13 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
 
     res.status(201).json({
       success: true,
-      token,
       user: {
         user_id: newUser.user_id,
         name: newUser.name,
         email: newUser.email,
         store_name: newUser.store_name,
         role: newUser.role,
+        workspace_id: newUser.workspace_id,
         created_at: newUser.created_at
       }
     });
@@ -210,15 +257,16 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
 });
 
 app.post('/api/auth/logout', (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.split(' ')[1];
-    activeSessions.delete(token);
-  }
+  if (!isSameOrigin(req)) return res.status(403).json({ error: 'Request origin is not allowed.' });
+  const token = getCookie(req, SESSION_COOKIE);
+  const session = token ? db.findSessionByTokenHash(hashSessionToken(token)) : undefined;
+  if (session) db.deleteSession(session.session_id);
+  clearSessionCookie(res);
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
 app.post('/api/auth/google', (req: Request, res: Response) => {
+  if (!isSameOrigin(req)) return res.status(403).json({ error: 'Request origin is not allowed.' });
   if (!process.env.GOOGLE_CLIENT_ID) {
     return res.status(503).json({
       success: false,
@@ -233,10 +281,22 @@ app.post('/api/auth/google', (req: Request, res: Response) => {
   });
 });
 
+app.use('/api', (req: Request, res: Response, next) => {
+  if (req.path === '/health' || req.path === '/auth/config' || req.path.startsWith('/auth/')) {
+    return next();
+  }
+  if (!isSameOrigin(req)) return res.status(403).json({ error: 'Request origin is not allowed.' });
+  const user = getUserFromReq(req);
+  if (!user) return res.status(401).json({ error: 'Authentication required.' });
+  res.locals.user = user;
+  (req as Request & { user?: UserRecord }).user = user;
+  next();
+});
+
 // Reviews List & Filter
 app.get('/api/reviews', (req: Request, res: Response) => {
   try {
-    let reviews = db.getReviews();
+    let reviews = db.getReviews(getWorkspaceId(req));
     const {
       product_id,
       category,
@@ -290,7 +350,7 @@ app.get('/api/reviews', (req: Request, res: Response) => {
 
 // Single Review Details
 app.get('/api/reviews/:id', (req: Request, res: Response) => {
-  const r = db.getReviewById(req.params.id);
+  const r = db.getReviewById(req.params.id, getWorkspaceId(req));
   if (!r) return res.status(404).json({ error: 'Review not found' });
   res.json({ review: r });
 });
@@ -302,7 +362,7 @@ app.patch('/api/reviews/:id', (req: Request, res: Response) => {
     if (!issues || !Array.isArray(issues)) {
       return res.status(400).json({ error: 'issues must be an array' });
     }
-    const updated = db.updateReviewIssues(req.params.id, issues, notes, user);
+    const updated = db.updateReviewIssues(req.params.id, issues, notes, user, getWorkspaceId(req));
     if (!updated) return res.status(404).json({ error: 'Review not found' });
     res.json({ review: updated });
   } catch (err: any) {
@@ -400,8 +460,10 @@ app.post('/api/reviews/import', async (req: Request, res: Response) => {
       }
     }
 
+    const workspaceId = getWorkspaceId(req);
     const job: ImportJob = {
       job_id: `JOB-${Date.now()}`,
+      workspace_id: workspaceId,
       filename: filename || 'manual_import.json',
       imported_at: new Date().toISOString(),
       total_rows: inputRecords.length,
@@ -419,12 +481,12 @@ app.post('/api/reviews/import', async (req: Request, res: Response) => {
         job,
         added: 0,
         updated: 0,
-        total_in_db: db.getReviews().length,
+        total_in_db: db.getReviews(workspaceId).length,
         errors
       });
     }
 
-    const importResult = db.importReviews(validReviews, job);
+    const importResult = db.importReviews(validReviews, job, workspaceId);
 
     res.json({
       success: true,
@@ -443,10 +505,11 @@ app.post('/api/reviews/import', async (req: Request, res: Response) => {
 app.post('/api/analyze', async (req: Request, res: Response) => {
   try {
     const { review_ids, force_reanalyze, method } = req.body;
-    const settings = db.getSettings();
+    const workspaceId = getWorkspaceId(req);
+    const settings = db.getSettings(workspaceId);
     const useAi = method === 'gemini_ai' || (method !== 'deterministic_rules' && settings.classification_mode === 'gemini_with_fallback');
 
-    let targetReviews = db.getReviews();
+    let targetReviews = db.getReviews(workspaceId);
     if (Array.isArray(review_ids) && review_ids.length > 0) {
       targetReviews = targetReviews.filter((r) => review_ids.includes(r.review_id));
     } else if (!force_reanalyze) {
@@ -463,7 +526,7 @@ app.post('/api/analyze', async (req: Request, res: Response) => {
       r.needs_human_review = result.needs_human_review;
       r.analysis_method = result.method;
       r.analyzed_at = new Date().toISOString();
-      db.saveReview(r);
+      db.saveReview(r, workspaceId);
       analyzed.push(r);
     }
 
@@ -474,7 +537,8 @@ app.post('/api/analyze', async (req: Request, res: Response) => {
       entity_type: 'review',
       timestamp: new Date().toISOString(),
       user: useAi ? 'Gemini AI Assistant' : 'Deterministic Rule Engine',
-      details: `Classified ${analyzed.length} reviews using ${useAi ? 'Gemini 3.8 Flash' : 'Deterministic Rules'}`
+      details: `Classified ${analyzed.length} reviews using ${useAi ? 'Gemini 3.8 Flash' : 'Deterministic Rules'}`,
+      workspace_id: workspaceId
     });
 
     res.json({
@@ -492,7 +556,7 @@ app.post('/api/reviews/resolve-duplicate', (req: Request, res: Response) => {
   try {
     const { review_id, mark_as_duplicate, user } = req.body;
     if (!review_id) return res.status(400).json({ error: 'review_id is required' });
-    const updated = db.resolveDuplicate(review_id, Boolean(mark_as_duplicate), user);
+    const updated = db.resolveDuplicate(review_id, Boolean(mark_as_duplicate), user, getWorkspaceId(req));
     if (!updated) return res.status(404).json({ error: 'Review not found' });
     res.json({ review: updated });
   } catch (err: any) {
@@ -503,12 +567,13 @@ app.post('/api/reviews/resolve-duplicate', (req: Request, res: Response) => {
 // Stats & Dashboard Summary
 app.get('/api/stats', (req: Request, res: Response) => {
   try {
-    const uniqueStats = db.getUniqueReviewStats();
-    const issues = db.getIssuesSummary();
+    const workspaceId = getWorkspaceId(req);
+    const uniqueStats = db.getUniqueReviewStats(workspaceId);
+    const issues = db.getIssuesSummary(workspaceId);
     const highSeverityIssues = issues.filter(
       (i) => i.severity === 'critical' || i.severity === 'high'
     );
-    const actions = db.getActions();
+    const actions = db.getActions(workspaceId);
     const pendingActions = actions.filter(
       (a) => a.status === 'Proposed' || a.status === 'Under Review'
     );
@@ -528,7 +593,7 @@ app.get('/api/stats', (req: Request, res: Response) => {
 // Issues Summary (Top 3 Prominent + Full taxonomy)
 app.get('/api/issues', (req: Request, res: Response) => {
   try {
-    const issues = db.getIssuesSummary();
+    const issues = db.getIssuesSummary(getWorkspaceId(req));
     res.json({ issues, total: issues.length, top_three: issues.slice(0, 3) });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -538,7 +603,7 @@ app.get('/api/issues', (req: Request, res: Response) => {
 // Products Quality Summary
 app.get('/api/products', (req: Request, res: Response) => {
   try {
-    const products = db.getProductsSummary();
+    const products = db.getProductsSummary(getWorkspaceId(req));
     res.json({ products, total: products.length });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -547,12 +612,13 @@ app.get('/api/products', (req: Request, res: Response) => {
 
 // Corrective Actions CRUD
 app.get('/api/actions', (req: Request, res: Response) => {
-  res.json({ actions: db.getActions() });
+  res.json({ actions: db.getActions(getWorkspaceId(req)) });
 });
 
 app.post('/api/actions', (req: Request, res: Response) => {
   try {
     const body = req.body;
+    const workspaceId = getWorkspaceId(req);
     if (!body.issue_category || !body.recommended_action) {
       return res.status(400).json({ error: 'issue_category and recommended_action are required' });
     }
@@ -575,10 +641,12 @@ app.post('/api/actions', (req: Request, res: Response) => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       reviewer_notes: body.reviewer_notes || '',
-      supporting_review_ids: Array.isArray(body.supporting_review_ids) ? body.supporting_review_ids : []
+      supporting_review_ids: Array.isArray(body.supporting_review_ids)
+        ? body.supporting_review_ids.filter((id: unknown) => typeof id === 'string' && Boolean(db.getReviewById(id, workspaceId)))
+        : []
     };
 
-    const created = db.createAction(action, body.user);
+    const created = db.createAction(action, resLocalsUser(req).name, workspaceId);
     res.status(201).json({ action: created });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -587,7 +655,8 @@ app.post('/api/actions', (req: Request, res: Response) => {
 
 app.patch('/api/actions/:id', (req: Request, res: Response) => {
   try {
-    const updated = db.updateAction(req.params.id, req.body, req.body.user);
+    const { workspace_id: _workspaceId, user: _user, ...safeUpdates } = req.body;
+    const updated = db.updateAction(req.params.id, safeUpdates, resLocalsUser(req).name, getWorkspaceId(req));
     if (!updated) return res.status(404).json({ error: 'Action not found' });
     res.json({ action: updated });
   } catch (err: any) {
@@ -597,7 +666,7 @@ app.patch('/api/actions/:id', (req: Request, res: Response) => {
 
 // Original vs Final Decisions (Side-by-side history preservation)
 app.get('/api/decisions', (req: Request, res: Response) => {
-  res.json({ decisions: db.getDecisions() });
+  res.json({ decisions: db.getDecisions(getWorkspaceId(req)) });
 });
 
 app.post('/api/decisions', (req: Request, res: Response) => {
@@ -629,7 +698,7 @@ app.post('/api/decisions', (req: Request, res: Response) => {
       version: 1
     };
 
-    const saved = db.saveDecision(decision, body.user);
+    const saved = db.saveDecision(decision, resLocalsUser(req).name, getWorkspaceId(req));
     res.status(201).json({ decision: saved });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -638,7 +707,7 @@ app.post('/api/decisions', (req: Request, res: Response) => {
 
 // Audit Logs
 app.get('/api/audit-log', (req: Request, res: Response) => {
-  res.json({ logs: db.getAuditLogs() });
+  res.json({ logs: db.getAuditLogs(getWorkspaceId(req)) });
 });
 
 // Load Official C01 Dataset (20 judge-labelled reviews, idempotent, non-destructive)
@@ -674,7 +743,7 @@ app.get('/api/dataset/c01-fixture', (req: Request, res: Response) => {
 app.get('/api/evaluation/benchmark', (req: Request, res: Response) => {
   try {
     const mode = (req.query.mode as string) === 'granular_taxonomy' ? 'granular_taxonomy' : 'c01_official';
-    const reviews = db.getReviews();
+    const reviews = db.getQuarantinedReviews();
     const evaluation = runEvaluationBenchmark(reviews, mode);
     res.json({ evaluation });
   } catch (err: any) {
@@ -684,15 +753,16 @@ app.get('/api/evaluation/benchmark', (req: Request, res: Response) => {
 
 // Business Planner Assumptive Model & MBA unit economics
 app.get('/api/business-planner', (req: Request, res: Response) => {
+  const workspaceId = getWorkspaceId(req);
   res.json({
-    assumptions: db.getBusinessAssumptions(),
+    assumptions: db.getBusinessAssumptions(workspaceId),
     action_cost_table: db.getActionCostTable()
   });
 });
 
 app.post('/api/business-planner', (req: Request, res: Response) => {
   try {
-    const updated = db.updateBusinessAssumptions(req.body);
+    const updated = db.updateBusinessAssumptions(req.body, getWorkspaceId(req));
     res.json({ assumptions: updated });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -701,12 +771,12 @@ app.post('/api/business-planner', (req: Request, res: Response) => {
 
 // Customer Discovery Interviews
 app.get('/api/interviews', (req: Request, res: Response) => {
-  res.json({ interviews: db.getInterviews() });
+  res.json({ interviews: db.getInterviews(getWorkspaceId(req)) });
 });
 
 app.post('/api/interviews', (req: Request, res: Response) => {
   try {
-    const saved = db.saveInterview(req.body);
+    const saved = db.saveInterview(req.body, getWorkspaceId(req));
     res.status(201).json({ interview: saved });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -715,12 +785,12 @@ app.post('/api/interviews', (req: Request, res: Response) => {
 
 // Pilot Experiments
 app.get('/api/pilots', (req: Request, res: Response) => {
-  res.json({ pilots: db.getPilots() });
+  res.json({ pilots: db.getPilots(getWorkspaceId(req)) });
 });
 
 app.post('/api/pilots', (req: Request, res: Response) => {
   try {
-    const saved = db.savePilot(req.body);
+    const saved = db.savePilot(req.body, getWorkspaceId(req));
     res.status(201).json({ pilot: saved });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -729,12 +799,13 @@ app.post('/api/pilots', (req: Request, res: Response) => {
 
 // Settings
 app.get('/api/settings', (req: Request, res: Response) => {
-  res.json({ settings: db.getSettings() });
+  res.json({ settings: db.getSettings(getWorkspaceId(req)) });
 });
 
 app.post('/api/settings', (req: Request, res: Response) => {
   try {
-    const updated = db.updateSettings(req.body, req.body.user);
+    const { workspace_id: _workspaceId, user: _user, ...safeSettings } = req.body;
+    const updated = db.updateSettings(safeSettings, resLocalsUser(req).name, getWorkspaceId(req));
     res.json({ settings: updated });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -743,17 +814,17 @@ app.post('/api/settings', (req: Request, res: Response) => {
 
 // Reset Demo Data
 app.post('/api/reset-demo', (req: Request, res: Response) => {
-  db.resetToDemo();
-  res.json({
-    success: true,
-    message: 'Reset database to official 20-review judge fixture dataset.'
+  res.status(410).json({
+    success: false,
+    error: 'Resetting shared demo data is disabled. Use the Evaluation Lab to inspect the quarantined C01 fixture.'
   });
 });
 
 // Export CSV & JSON (Formula injection sanitized)
 app.get('/api/export/csv', (req: Request, res: Response) => {
   try {
-    const reviews = db.getReviews();
+    const workspaceId = getWorkspaceId(req);
+    const reviews = db.getReviews(workspaceId);
     const headers = [
       'review_id',
       'product_id',
@@ -797,17 +868,18 @@ app.get('/api/export/csv', (req: Request, res: Response) => {
 
 app.get('/api/export/json', (req: Request, res: Response) => {
   try {
+    const workspaceId = getWorkspaceId(req);
     const payload = {
       exported_at: new Date().toISOString(),
       dataset_version: 'C01-Fixture-v3',
-      unique_stats: db.getUniqueReviewStats(),
-      reviews: db.getReviews(),
-      top_issues: db.getIssuesSummary().slice(0, 3),
-      all_issues: db.getIssuesSummary(),
-      products: db.getProductsSummary(),
-      actions: db.getActions(),
-      decisions: db.getDecisions(),
-      evaluation: runEvaluationBenchmark(db.getReviews()),
+      unique_stats: db.getUniqueReviewStats(workspaceId),
+      reviews: db.getReviews(workspaceId),
+      top_issues: db.getIssuesSummary(workspaceId).slice(0, 3),
+      all_issues: db.getIssuesSummary(workspaceId),
+      products: db.getProductsSummary(workspaceId),
+      actions: db.getActions(workspaceId),
+      decisions: db.getDecisions(workspaceId),
+      evaluation: runEvaluationBenchmark(db.getReviews(workspaceId)),
       business_assumptions: db.getBusinessAssumptions()
     };
 

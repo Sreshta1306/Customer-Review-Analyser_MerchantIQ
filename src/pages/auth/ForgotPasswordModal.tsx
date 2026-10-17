@@ -56,7 +56,7 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
             </div>
 
             <div className="p-3 bg-slate-50 border border-[#E2E8F0] rounded-xl text-[11px] text-[#64748B] leading-relaxed">
-              <strong>Notice:</strong> Outbound password reset emails require an active transactional mail server integration (e.g. SMTP/Resend). If testing this sandbox, use the pre-configured Demo Account or register a new workspace account.
+              <strong>Password recovery is not configured:</strong> An email delivery service is not connected, so no reset message will be sent. Register a new account or contact the workspace administrator.
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E8F0]">
@@ -80,9 +80,9 @@ export const ForgotPasswordModal: React.FC<ForgotPasswordModalProps> = ({
             <div className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-5 h-5" />
             </div>
-            <h4 className="font-bold text-sm text-[#172033]">Reset Instructions Dispatched</h4>
+            <h4 className="font-bold text-sm text-[#172033]">Password Recovery Unavailable</h4>
             <p className="text-xs text-[#64748B] leading-relaxed">
-              If an account is associated with <strong className="text-[#172033]">{email}</strong>, a secure recovery token has been queued. Please check your inbox and spam folder.
+              Email delivery is not configured for this deployment. No recovery token was created or sent for <strong className="text-[#172033]">{email}</strong>.
             </p>
             <div className="pt-2">
               <button

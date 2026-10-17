@@ -13,7 +13,6 @@ import {
   ArrowRight,
   AlertCircle,
   Loader2,
-  Sparkles,
   CheckCircle2
 } from 'lucide-react';
 
@@ -29,7 +28,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
 
   // States
   const [loading, setLoading] = useState(false);
@@ -67,8 +65,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     if (!password) {
       setPasswordError('Please enter your password.');
       isValid = false;
-    } else if (password.length < 6) {
-      setPasswordError('Password must be at least 6 characters.');
+    } else if (password.length < 8) {
+      setPasswordError('Password must be at least 8 characters.');
       isValid = false;
     }
 
@@ -91,14 +89,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }
   };
 
-  const handleFillDemo = () => {
-    setEmail('quality.lead@merchantiq.com');
-    setPassword('MerchantIQ@2026');
-    setEmailError(null);
-    setPasswordError(null);
-    setErrorMessage(null);
-  };
-
   return (
     <AuthLayout mode="login">
       <div className="space-y-6">
@@ -112,15 +102,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 Merchant Portal
               </span>
             </div>
-            <button
-              type="button"
-              onClick={handleFillDemo}
-              className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#635BFF] bg-indigo-50/70 hover:bg-indigo-100/70 border border-indigo-200/60 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
-              title="Click to pre-fill verified demo credentials"
-            >
-              <Sparkles className="w-3 h-3 text-[#635BFF]" />
-              <span>Demo Login</span>
-            </button>
+
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-[#172033]">
             Welcome back
@@ -212,20 +194,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({
             )}
           </div>
 
-          {/* Remember Me Checkbox */}
-          <div className="flex items-center gap-2 pt-0.5">
-            <input
-              type="checkbox"
-              id="rememberMe"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-3.5 h-3.5 rounded border-[#E2E8F0] text-[#635BFF] focus:ring-[#635BFF] cursor-pointer"
-            />
-            <label htmlFor="rememberMe" className="text-xs text-[#64748B] select-none cursor-pointer">
-              Remember me on this browser
-            </label>
-          </div>
-
           {/* Primary Sign In Button */}
           <button
             type="submit"
@@ -254,15 +222,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           </span>
         </div>
 
-        {/* Continue with Google Button */}
-        <button
-          type="button"
-          onClick={() => setIsGoogleModalOpen(true)}
-          className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-[#E2E8F0] text-[#172033] text-xs font-semibold rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2.5 cursor-pointer"
-        >
-          <GoogleLogo className="w-4 h-4 shrink-0" />
-          <span>Continue with Google</span>
-        </button>
+        {googleConfig.google_configured && (
+          <>
+            <button
+              type="button"
+              onClick={() => setIsGoogleModalOpen(true)}
+              className="w-full py-2.5 px-4 bg-white hover:bg-slate-50 border border-[#E2E8F0] text-[#172033] text-xs font-semibold rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2.5 cursor-pointer"
+            >
+              <GoogleLogo className="w-4 h-4 shrink-0" />
+              <span>Continue with Google</span>
+            </button>
+          </>
+        )}
 
         {/* Navigation to Signup */}
         <div className="text-center pt-2">

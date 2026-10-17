@@ -194,11 +194,11 @@ async function runTests() {
   console.log('================================================================');
 
   if (failedTests > 0) {
-    process.exit(1);
+    throw new Error(`${failedTests} isolated C01 test(s) failed.`);
   }
 }
 
-runTests().catch((err) => {
+export const testRun = runTests().catch((err) => {
   console.error('Fatal test error:', err);
-  process.exit(1);
+  throw err;
 });

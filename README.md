@@ -70,7 +70,7 @@ Copy-Item .env.example .env
 notepad .env
 ```
 
-Set `GEMINI_API_KEY` to the key from Google AI Studio if Gemini analysis is wanted. Leave it blank to use the deterministic rules engine. `GOOGLE_CLIENT_ID` is optional and can remain blank for email/password authentication. `.env` is ignored by Git; never put a real key in `.env.example` or frontend source.
+Set `GEMINI_API_KEY` to the key from Google AI Studio if Gemini analysis is wanted. Leave it blank to use the deterministic rules engine. `GOOGLE_CLIENT_ID` is optional and can remain blank for email/password authentication. Keep `COOKIE_SECURE=false` for the documented local HTTP URL; set it to `true` when serving through HTTPS. `.env` is ignored by Git; never put a real key in `.env.example` or frontend source.
 
 ### Build and launch
 
@@ -160,6 +160,10 @@ npm start
 ## 5. API Endpoints
 
 - `GET /api/health` — Server & AI availability check
+- `POST /api/auth/register` — Create a persistent account and session
+- `POST /api/auth/login` — Authenticate and issue an HttpOnly session cookie
+- `POST /api/auth/logout` — Invalidate the current session
+- `GET /api/auth/me` — Return the authenticated user profile
 - `GET /api/stats` — Dashboard metrics & unique counts
 - `GET /api/reviews` — Filtered review list
 - `POST /api/reviews/import` — Ingest CSV/JSON batch
@@ -179,7 +183,17 @@ npm start
 - `GET /api/pilots` — 30-day pilot experiments
 - `GET /api/export/csv` — Formula-sanitized CSV export
 - `GET /api/export/json` — Full JSON export
-- `POST /api/reset-demo` — Restore 20-review starter fixture
+- `POST /api/dataset/load-c01` — Load the official C01 fixture into the quarantined evaluation dataset
+
+### Authentication and privacy
+
+Email/password accounts are stored in the persistent JSON database at `data\merchant_intelligence_db.json`. Passwords use salted Node.js `scrypt` hashes; plaintext passwords are never stored or returned. Sessions are stored as SHA-256 hashes of random opaque tokens and delivered only in an HttpOnly, SameSite cookie. Sessions expire after seven days and are invalidated on logout. All application API routes require authentication, while health and authentication configuration endpoints remain public.
+
+Each registered account receives a unique workspace ID. Reviews, imports, analysis results, corrective actions, decisions, settings, interviews, pilots, exports, and audit entries created by a merchant are scoped to that workspace in the backend. Existing records without reliable ownership metadata remain preserved as quarantined legacy/demo data and are not returned to normal merchant accounts. The shared demo reset endpoint is disabled to prevent destructive cross-account changes.
+
+The official C01 fixture is evaluation data, not merchant data. It can be inspected through the Evaluation Lab and is kept separate from newly registered merchant workspaces.
+
+Password recovery email delivery and Google OAuth are intentionally unavailable unless their external services are configured. The UI does not claim that reset messages or OAuth sign-ins work when those integrations are absent.
 
 ## 6. Docker implementation details
 
@@ -187,3 +201,5 @@ npm start
 - `compose.yaml` runs one `merchantiq` service on host port 3000 and maps `./data` to `/app/data`.
 - `GEMINI_API_KEY` is passed only to the backend container at runtime. It is never a Vite variable and is not bundled into browser code.
 - The existing Express server continues to serve `dist/index.html` for the SPA and all existing API routes.
+- Before ownership migration, create a copy of `data\merchant_intelligence_db.json`. The migration adds workspace IDs to users and preserves ownerless records unchanged apart from the additive schema metadata.
+- If Gemini responds with a provider rate-limit/quota response (`HTTP 429`), the review is explicitly labeled `deterministic_rules`; this is not reported as a successful Gemini analysis.

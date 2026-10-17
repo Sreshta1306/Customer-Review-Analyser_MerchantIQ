@@ -23,6 +23,7 @@ export interface IssueLabel {
 
 export interface Review {
   review_id: string;
+  workspace_id?: string;
   product_id: string;
   product_name?: string;
   review_text: string;
@@ -85,6 +86,7 @@ export type ActionStatus =
 
 export interface CorrectiveAction {
   action_id: string;
+  workspace_id?: string;
   issue_category: IssueCategory;
   issue_title: string;
   affected_products: string[];
@@ -110,6 +112,7 @@ export interface CorrectiveAction {
 
 export interface DecisionVersion {
   decision_id: string;
+  workspace_id?: string;
   issue_category: IssueCategory;
   issue_title: string;
   timestamp: string;
@@ -136,6 +139,7 @@ export interface DecisionVersion {
 
 export interface AuditLogEntry {
   log_id: string;
+  workspace_id?: string;
   event_type:
     | 'IMPORT_COMPLETED'
     | 'ANALYSIS_RUN'
@@ -213,6 +217,7 @@ export interface BusinessPlanAssumptions {
 
 export interface CustomerInterview {
   interview_id: string;
+  workspace_id?: string;
   participant_role: string;
   organization_type: string;
   contact_date: string;
@@ -230,6 +235,7 @@ export interface CustomerInterview {
 
 export interface PilotExperiment {
   pilot_id: string;
+  workspace_id?: string;
   title: string;
   hypothesis: string;
   target_partner: string;
@@ -267,6 +273,7 @@ export interface ActionCostAssumption {
 }
 
 export interface AppSettings {
+  workspace_id?: string;
   prioritization_weights: {
     severity_weight: number; // 0-1
     volume_weight: number; // 0-1
@@ -280,6 +287,7 @@ export interface AppSettings {
 
 export interface UserAccount {
   user_id: string;
+  workspace_id: string;
   name: string;
   email: string;
   store_name: string;
@@ -289,6 +297,6 @@ export interface UserAccount {
 }
 
 export interface AuthSession {
-  token: string;
   user: UserAccount;
+  expires_at: string;
 }

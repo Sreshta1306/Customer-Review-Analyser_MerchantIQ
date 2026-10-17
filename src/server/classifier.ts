@@ -335,7 +335,19 @@ export function mapCategoriesToC01Topics(categories: IssueCategory[]): ('quality
     const mapped = C01_CATEGORY_MAPPING[cat];
     if (mapped) topics.add(mapped);
   }
+
   return Array.from(topics);
+}
+
+function getGeminiStatus(error: unknown): string | null {
+  const candidate = error as { status?: unknown; code?: unknown };
+  if (typeof candidate.status === 'number' || typeof candidate.status === 'string') {
+    return String(candidate.status);
+  }
+  if (typeof candidate.code === 'number' || typeof candidate.code === 'string') {
+    return String(candidate.code);
+  }
+  return null;
 }
 
 /**
@@ -423,7 +435,36 @@ Review Text: "${review.review_text.replace(/"/g, '\\"')}"`;
         }
       });
 
-      const response: any = await Promise.race([generatePromise, timeoutPromise]);
+      let response: any;
+      try {
+        response = await Promise.race([generatePromise, timeoutPromise]);
+      } catch (error: unknown) {
+        const status = getGeminiStatus(error);
+        if (status !== '500' && status !== '502' && status !== '503' && status !== '504') {
+          throw error;
+        }
+        response = await Promise.race([
+          geminiClient.models.generateContent({
+            model: 'gemini-3.8-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  issues: { type: Type.ARRAY, items: { type: Type.OBJECT } },
+                  sentiment: { type: Type.STRING },
+                  needs_human_review: { type: Type.BOOLEAN }
+                },
+                required: ['issues', 'sentiment', 'needs_human_review']
+              }
+            }
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Gemini retry timed out after 60000ms')), 60000)
+          )
+        ]);
+      }
       const text = response.text?.trim();
 
       if (text) {
@@ -459,8 +500,24 @@ Review Text: "${review.review_text.replace(/"/g, '\\"')}"`;
           };
         }
       }
-    } catch {
-      console.warn('Gemini classification unavailable or timed out; falling back to deterministic rules.');
+    } catch (error: unknown) {
+      const safeError = error as { name?: unknown; status?: unknown; code?: unknown };
+      const name = typeof safeError.name === 'string' ? safeError.name : 'UnknownError';
+      const status = typeof safeError.status === 'number' || typeof safeError.status === 'string'
+        ? String(safeError.status)
+        : typeof safeError.code === 'number' || typeof safeError.code === 'string'
+          ? String(safeError.code)
+          : 'unavailable';
+      const category = status === '429'
+        ? 'quota_or_rate_limit'
+        : status === '401' || status === '403'
+          ? 'authentication_or_model_access'
+          : status === '404'
+            ? 'model_not_found_or_unavailable'
+            : status === '500' || status === '502' || status === '503' || status === '504'
+              ? 'provider_transient_error'
+              : 'unclassified_provider_error';
+      console.warn(`Gemini classification failed (${name}, status=${status}, category=${category}); using deterministic_rules fallback.`);
     }
   }
 

@@ -9,6 +9,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     volumes:

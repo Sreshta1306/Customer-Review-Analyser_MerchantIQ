@@ -412,15 +412,16 @@ export const SignupPage: React.FC<SignupPageProps> = ({
           </span>
         </div>
 
-        {/* Continue with Google Button */}
-        <button
-          type="button"
-          onClick={() => setIsGoogleModalOpen(true)}
-          className="w-full py-2 px-4 bg-white hover:bg-slate-50 border border-[#E2E8F0] text-[#172033] text-xs font-semibold rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2.5 cursor-pointer"
-        >
-          <GoogleLogo className="w-4 h-4 shrink-0" />
-          <span>Continue with Google</span>
-        </button>
+        {googleConfig.google_configured && (
+          <button
+            type="button"
+            onClick={() => setIsGoogleModalOpen(true)}
+            className="w-full py-2 px-4 bg-white hover:bg-slate-50 border border-[#E2E8F0] text-[#172033] text-xs font-semibold rounded-xl transition-all shadow-2xs flex items-center justify-center gap-2.5 cursor-pointer"
+          >
+            <GoogleLogo className="w-4 h-4 shrink-0" />
+            <span>Continue with Google</span>
+          </button>
+        )}
 
         {/* Navigation to Login */}
         <div className="text-center pt-1">
