@@ -13,6 +13,7 @@ import {
   isGeminiConfigured
 } from './src/server/classifier';
 import { Review, CorrectiveAction, DecisionVersion } from './src/types';
+import { validateReviewRecord } from './src/import/parsing';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -394,6 +395,11 @@ app.post('/api/reviews/import', async (req: Request, res: Response) => {
 
     inputRecords.forEach((raw: any, index: number) => {
       const rowNum = index + 1;
+      const validationError = validateReviewRecord(raw);
+      if (validationError) {
+        errors.push({ row: rowNum, ...validationError });
+        return;
+      }
       const product = raw.product && typeof raw.product === 'object' ? raw.product : {};
       const reviewId = String(raw.review_id || raw.id || raw.reviewId || '').trim();
       const productId = String(raw.product_id || raw.productId || product.product_id || product.id || 'PROD-UNKNOWN').trim();
@@ -441,8 +447,18 @@ app.post('/api/reviews/import', async (req: Request, res: Response) => {
         rating,
         created_at: validDate,
         issues: raw.issues && Array.isArray(raw.issues) ? raw.issues : [],
+        evaluation_expected_topics: Array.isArray(raw.expected_topics)
+          ? raw.expected_topics.map((topic: unknown) => String(topic))
+          : Array.isArray(raw.evaluation_expected_topics)
+          ? raw.evaluation_expected_topics.map((topic: unknown) => String(topic))
+          : undefined,
         analysis_method: raw.analysis_method || 'unprocessed',
-        needs_human_review: false
+        needs_human_review: false,
+        duplicate_of: typeof raw.duplicate_of === 'string' ? raw.duplicate_of : undefined,
+        is_duplicate_candidate: raw.is_duplicate_candidate === true,
+        duplicate_similarity:
+          typeof raw.duplicate_similarity === 'number' ? raw.duplicate_similarity : undefined,
+        duplicate_reason: typeof raw.duplicate_reason === 'string' ? raw.duplicate_reason : undefined
       });
     });
 
@@ -713,7 +729,7 @@ app.get('/api/audit-log', (req: Request, res: Response) => {
 // Load Official C01 Dataset (20 judge-labelled reviews, idempotent, non-destructive)
 app.post('/api/dataset/load-c01', (req: Request, res: Response) => {
   try {
-    const result = db.loadOfficialC01();
+    const result = db.loadOfficialC01(getWorkspaceId(req));
     res.json({
       success: true,
       message: 'Official C01 dataset (20 reviews) loaded successfully.',

@@ -100,6 +100,9 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
       color: severityColors[key] || '#94a3b8'
     }));
 
+  const confirmedDuplicateLabel = `${stats.confirmed_duplicates} confirmed duplicate${stats.confirmed_duplicates === 1 ? '' : 's'}`;
+  const suspectedDuplicateLabel = `${stats.suspected_duplicates} suspected candidate${stats.suspected_duplicates === 1 ? '' : 's'}`;
+
   return (
     <div className="space-y-6">
       {/* Page Title & Context Banner */}
@@ -143,7 +146,7 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
               </span>
             </div>
             <p className="text-slate-600 mt-1">
-              Dataset: <code>Starter_Data/C01/fixture.json</code> &bull; Currency: <strong>INR (₹)</strong> &bull; Reconciled: <strong>{stats.valid_unique_reviews} unique reviews</strong> (1 confirmed duplicate R005 non-inflated).
+              Dataset: <code>Starter_Data/C01/fixture.json</code> &bull; Currency: <strong>INR (₹)</strong> &bull; Reconciled: <strong>{stats.valid_unique_reviews} unique reviews</strong> ({confirmedDuplicateLabel}; {suspectedDuplicateLabel}).
             </p>
           </div>
         </div>
@@ -188,9 +191,11 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
             <Copy className="w-4 h-4 text-amber-500" />
           </div>
           <div className="text-2xl font-bold font-mono tabular-nums text-amber-700">
-            {stats.confirmed_duplicates + stats.suspected_duplicates}
+            {stats.confirmed_duplicates}
           </div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Flagged candidates</div>
+          <div className="text-[11px] text-slate-400 mt-0.5">
+            Confirmed; {stats.suspected_duplicates} suspected
+          </div>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
@@ -301,7 +306,7 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
                     <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
                       Recommended Action
                     </span>
-                    <p className="text-xs text-slate-800 font-medium mt-1 leading-snug">
+                    <p className="text-xs text-slate-800 font-medium mt-1 leading-relaxed whitespace-normal break-words">
                       {issue.suggested_action}
                     </p>
                   </div>
@@ -412,7 +417,7 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
               Deduplication & Safety Invariants Verified
             </span>
             <p className="text-amber-800">
-              1 suspected duplicate flagged (R005 duplicate of R004); 1 critical electrical hazard escalated (R003 cord sparks); 1 adversarial injection neutralized (R006).
+              {confirmedDuplicateLabel}; {suspectedDuplicateLabel}; 1 critical electrical hazard escalated (R003 cord sparks); 1 adversarial injection neutralized (R006).
             </p>
           </div>
         </div>

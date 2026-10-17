@@ -45,6 +45,29 @@ export const ALLOWED_CATEGORIES: IssueCategory[] = [
   'uncertain'
 ];
 
+function getDeliveryDelayIssue(reviewText: string): IssueLabel | null {
+  const text = reviewText.toLowerCase();
+  const deliveryDelayPatterns = [
+    /\barrived\s+(?:\w+\s+){0,3}late\b/i,
+    /\b(?:delivery|package|parcel|shipment|order)\s+(?:was\s+)?delayed\b/i,
+    /\b(?:package|parcel|shipment|order)\s+arrived\s+late\b/i,
+    /\border\s+took\s+too\s+long\s+to\s+arrive\b/i,
+    /\bnever\s+received\s+(?:the\s+)?order\b/i,
+    /\bdelivery\s+(?:was\s+)?late\b/i
+  ];
+  const matchedPattern = deliveryDelayPatterns.find((pattern) => pattern.test(text));
+  if (!matchedPattern) return null;
+
+  const match = reviewText.match(matchedPattern);
+  return {
+    category: 'delivery_related_issues',
+    evidence: match?.[0] || reviewText.slice(0, 100),
+    confidence: 0.96,
+    severity: 'medium',
+    rationale: 'Explicit delivery delay or non-receipt complaint detected.'
+  };
+}
+
 /**
  * Deterministic rule-based multi-label classifier.
  * Handles sarcasm, multi-issue reviews, prompt injection resilience,
@@ -236,11 +259,11 @@ export function classifyWithRules(reviewText: string, rating: number): {
     });
   }
 
-  // Delivery-related issues (Courier mishandling, not product defect)
+  // Delivery-related issues (Courier mishandling, delay, or non-receipt)
+  const deliveryDelayIssue = getDeliveryDelayIssue(reviewText);
   if (
     text.includes('courier threw') ||
     text.includes('garden fence') ||
-    text.includes('delivery was late') ||
     text.includes('driver left')
   ) {
     issues.push({
@@ -250,6 +273,9 @@ export function classifyWithRules(reviewText: string, rating: number): {
       severity: 'low',
       rationale: 'Last-mile courier logistics failure; product itself intact.'
     });
+  }
+  if (deliveryDelayIssue) {
+    issues.push(deliveryDelayIssue);
   }
 
   // Poor material quality
@@ -492,10 +518,22 @@ Review Text: "${review.review_text.replace(/"/g, '\\"')}"`;
             };
           });
 
+          const explicitDeliveryIssue = getDeliveryDelayIssue(review.review_text);
+          const normalizedIssues = explicitDeliveryIssue
+            ? [
+                ...validIssues.filter((issue) => issue.category !== 'uncertain'),
+                ...(validIssues.some((issue) => issue.category === 'delivery_related_issues')
+                  ? []
+                  : [explicitDeliveryIssue])
+              ]
+            : validIssues;
+
           return {
-            issues: validIssues,
+            issues: normalizedIssues,
             sentiment: parsed.sentiment || (review.rating >= 4 ? 'positive' : 'negative'),
-            needs_human_review: Boolean(parsed.needs_human_review),
+            needs_human_review:
+              Boolean(parsed.needs_human_review) ||
+              normalizedIssues.some((issue) => issue.category === 'uncertain'),
             method: 'gemini_ai'
           };
         }

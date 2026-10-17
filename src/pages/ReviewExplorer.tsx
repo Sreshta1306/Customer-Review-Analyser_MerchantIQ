@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
+import { parseImportText } from '../import/parsing';
 import { Review, IssueCategory, SeverityLevel } from '../types';
 import { SeverityBadge, MethodBadge } from '../components/common/Badge';
 import { Modal } from '../components/common/Modal';
@@ -110,45 +111,24 @@ export const ReviewExplorer: React.FC = () => {
     try {
       setIsImporting(true);
       setImportStatus(null);
-      let records: any[] = [];
-
-      // Detect JSON vs CSV
-      if (importText.trim().startsWith('[') || importText.trim().startsWith('{')) {
-        const parsed = JSON.parse(importText);
-        if (Array.isArray(parsed)) {
-          records = parsed;
-        } else if (Array.isArray(parsed.reviews)) {
-          records = parsed.reviews;
-        } else if (Array.isArray(parsed.records?.reviews)) {
-          records = parsed.records.reviews;
-        } else if (Array.isArray(parsed.records)) {
-          records = parsed.records;
-        } else {
-          records = [parsed];
-        }
-      } else {
-        // Parse CSV
-        const lines = importText.split('\n').filter((l) => l.trim().length > 0);
-        if (lines.length > 1) {
-          const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
-          for (let i = 1; i < lines.length; i++) {
-            // Basic CSV row parsing
-            const cols = lines[i].split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
-            const row: any = {};
-            headers.forEach((h, idx) => {
-              row[h] = cols[idx];
-            });
-            records.push(row);
-          }
-        }
+      const parsed = parseImportText(importText);
+      if (parsed.records.length === 0) {
+        setImportStatus({
+          error: parsed.rejectedRows.map((row) => `Row ${row.row}: ${row.message}`).join('; ') ||
+            'No review records found in the uploaded file.'
+        });
+        return;
       }
 
-      const res = await api.importReviews({
+      const response = await api.importReviews({
         filename: importFileName || 'uploaded_reviews.json',
-        records,
+        records: parsed.records,
         auto_analyze: true
       });
-      setImportStatus(res);
+      setImportStatus({
+        ...response,
+        parse_errors: parsed.rejectedRows
+      });
       fetchReviews();
     } catch (err: any) {
       setImportStatus({ error: err.message || 'Invalid format' });
@@ -196,6 +176,11 @@ R103,PROD-UNKNOWN,Unknown Item,2,"Fabric was totally see through and sizing ran 
       r.review_text.toLowerCase().includes(q)
     );
   });
+
+  const confirmedDuplicateCount = reviews.filter((review) => Boolean(review.duplicate_of)).length;
+  const suspectedDuplicateCount = reviews.filter(
+    (review) => Boolean(review.is_duplicate_candidate) && !review.duplicate_of
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -287,7 +272,7 @@ R103,PROD-UNKNOWN,Unknown Item,2,"Fabric was totally see through and sizing ran 
             Showing <strong className="font-mono text-slate-900">{filteredReviews.length}</strong> reviews
           </span>
           <span className="text-[11px] text-slate-400">
-            Multi-issue reviews count once per group, once overall.
+            {confirmedDuplicateCount} confirmed duplicate{confirmedDuplicateCount === 1 ? '' : 's'} · {suspectedDuplicateCount} suspected candidate{suspectedDuplicateCount === 1 ? '' : 's'} · Multi-issue reviews count once per group, once overall.
           </span>
         </div>
       </div>
@@ -371,14 +356,25 @@ R103,PROD-UNKNOWN,Unknown Item,2,"Fabric was totally see through and sizing ran 
                       </div>
 
                       {/* Duplicate Candidate Banner */}
-                      {rev.is_duplicate_candidate && (
+                      {(rev.is_duplicate_candidate || rev.duplicate_of) && (
                         <div className="mt-1.5 flex items-center gap-2 p-1.5 bg-amber-50 border border-amber-200 rounded text-[11px] text-amber-800">
                           <Copy className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                           <span>
                             {rev.duplicate_of
-                              ? `Duplicate of ${rev.duplicate_of}`
-                              : 'Suspected duplicate text'}
+                              ? `Confirmed duplicate of ${rev.duplicate_of}`
+                              : 'Suspected duplicate candidate'}
                           </span>
+                          {rev.duplicate_of && (
+                            <button
+                              onClick={() => {
+                                setSearchTerm(rev.duplicate_of || '');
+                                setFilterDuplicatesOnly(false);
+                              }}
+                              className="underline font-semibold text-amber-900"
+                            >
+                              Find original
+                            </button>
+                          )}
                           <button
                             onClick={() =>
                               handleResolveDuplicate(rev.review_id, !rev.duplicate_of)
@@ -578,6 +574,11 @@ R103,PROD-UNKNOWN,Unknown Item,2,"Fabric was totally see through and sizing ran 
                           <li key={`${error.row}-${error.field}`}>Row {error.row}, {error.field}: {error.message}</li>
                         ))}
                       </ul>
+                    )}
+                    {importStatus.parse_errors?.length > 0 && (
+                      <div className="mt-1">
+                        Rejected during file parsing: {importStatus.parse_errors.length}
+                      </div>
                     )}
                   </div>
                 )}

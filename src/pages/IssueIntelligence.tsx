@@ -260,8 +260,10 @@ export const IssueIntelligence: React.FC<IssueIntelligenceProps> = ({ onNavigate
                       <span className="text-[11px] text-slate-400 ml-1">products</span>
                     </td>
 
-                    <td className="py-3 px-4 max-w-xs truncate text-slate-600">
-                      {issue.suggested_action}
+                    <td className="py-3 px-4 align-top">
+                      <div className="min-w-[260px] max-w-[420px] whitespace-normal break-words leading-relaxed text-slate-600">
+                        {issue.suggested_action}
+                      </div>
                     </td>
 
                     <td className="py-3 px-4 whitespace-nowrap text-right space-x-2">

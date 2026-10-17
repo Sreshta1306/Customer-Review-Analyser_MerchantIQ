@@ -20,16 +20,15 @@ export const EvaluationLab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [filterDisagreementsOnly, setFilterDisagreementsOnly] = useState(false);
-  const [evalMode, setEvalMode] = useState<'c01_official' | 'granular_taxonomy'>('c01_official');
 
   useEffect(() => {
-    loadEvaluation(evalMode);
-  }, [evalMode]);
+    loadEvaluation();
+  }, []);
 
-  const loadEvaluation = async (mode: 'c01_official' | 'granular_taxonomy' = evalMode) => {
+  const loadEvaluation = async () => {
     try {
       setLoading(true);
-      const res = await api.getEvaluationBenchmark(mode);
+      const res = await api.getEvaluationBenchmark('c01_official');
       setEvaluation(res.evaluation);
     } catch (err) {
       console.error('Failed to load evaluation benchmark:', err);
@@ -41,7 +40,7 @@ export const EvaluationLab: React.FC = () => {
   const handleRunBenchmark = async () => {
     try {
       setRunning(true);
-      const res = await api.getEvaluationBenchmark(evalMode);
+      const res = await api.getEvaluationBenchmark('c01_official');
       setEvaluation(res.evaluation);
     } catch (err) {
       alert('Failed to run benchmark');
@@ -58,7 +57,7 @@ export const EvaluationLab: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `case_c01_evaluation_benchmark_${evalMode}_${Date.now()}.json`;
+    a.download = `case_c01_evaluation_benchmark_${Date.now()}.json`;
     a.click();
   };
 
@@ -89,30 +88,6 @@ export const EvaluationLab: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Mode Switcher Tabs */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs">
-            <button
-              onClick={() => setEvalMode('c01_official')}
-              className={`px-3 py-1 rounded-md font-semibold transition-colors ${
-                evalMode === 'c01_official'
-                  ? 'bg-white text-indigo-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              C01 Official 5-Topic Mode
-            </button>
-            <button
-              onClick={() => setEvalMode('granular_taxonomy')}
-              className={`px-3 py-1 rounded-md font-semibold transition-colors ${
-                evalMode === 'granular_taxonomy'
-                  ? 'bg-white text-indigo-700 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Granular 11-Category Mode
-            </button>
-          </div>
-
           <button
             onClick={handleExportJson}
             className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors flex items-center gap-1.5"

@@ -7,10 +7,24 @@ export interface ImportParseResult {
   rejectedRows: { row: number; message: string }[];
 }
 
+export function validateReviewRecord(record: unknown): { field: string; message: string } | null {
+  if (!isRecord(record)) return { field: 'record', message: 'Each review record must be an object' };
+  const reviewId = String(record.review_id ?? record.id ?? record.reviewId ?? '').trim();
+  if (!reviewId) return { field: 'review_id', message: 'Missing review_id' };
+  const reviewText = String(record.review_text ?? record.text ?? record.content ?? record.review ?? '').trim();
+  if (!reviewText) return { field: 'review_text', message: 'Review text cannot be empty' };
+  const rating = Number(record.rating);
+  if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+    return { field: 'rating', message: 'Rating must be a number between 1 and 5' };
+  }
+  return null;
+}
+
 export function normalizeImportPayload(payload: unknown): NormalizedReviewRecord[] {
   if (Array.isArray(payload)) return payload.filter(isRecord);
   if (!isRecord(payload)) return [];
 
+  if (Array.isArray(payload.reviews)) return payload.reviews.filter(isRecord);
   const records = payload.records;
   if (Array.isArray(records)) return records.filter(isRecord);
   if (isRecord(records) && Array.isArray(records.reviews)) {

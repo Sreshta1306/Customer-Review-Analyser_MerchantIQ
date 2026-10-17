@@ -232,7 +232,7 @@ export const ProductQuality: React.FC = () => {
                 Linked Customer Feedback History ({productReviews.length}):
               </h4>
               <div className="space-y-2 max-h-60 overflow-y-auto">
-                {productReviews.map((r) => (
+                {productReviews.filter((review) => !review.duplicate_of).map((r) => (
                   <div
                     key={r.review_id}
                     className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs space-y-1"

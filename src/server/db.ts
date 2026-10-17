@@ -98,11 +98,32 @@ export interface SessionRecord {
   expires_at: string;
 }
 
-class Store {
+export function normalizeReviewText(text: string): string {
+  return text
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function textSimilarity(left: string, right: string): number {
+  const leftTokens = new Set(normalizeReviewText(left).split(' ').filter(Boolean));
+  const rightTokens = new Set(normalizeReviewText(right).split(' ').filter(Boolean));
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
+  const intersection = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  return intersection / new Set([...leftTokens, ...rightTokens]).size;
+}
+
+export class Store {
   private data: DatabaseSchema;
 
-  constructor() {
-    this.data = this.load();
+  constructor(seedDefaults = true) {
+    this.data = seedDefaults ? this.load() : this.getDefaultState();
+    if (!seedDefaults) {
+      this.data.reviews = [];
+      this.data.importJobs = [];
+    }
   }
 
   private ensureDir() {
@@ -283,6 +304,7 @@ class Store {
           if (!parsed.businessAssumptionsByWorkspace || typeof parsed.businessAssumptionsByWorkspace !== 'object') {
             parsed.businessAssumptionsByWorkspace = {};
           }
+          this.reconcileDuplicateMetadata(parsed);
           fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
           return parsed;
         }
@@ -293,6 +315,36 @@ class Store {
     const defaultState = this.getDefaultState();
     this.save(defaultState);
     return defaultState;
+  }
+
+  private reconcileDuplicateMetadata(data: DatabaseSchema): void {
+    const groups = new Map<string, Review[]>();
+    for (const review of data.reviews) {
+      const key = review.workspace_id || '';
+      const group = groups.get(key) || [];
+      group.push(review);
+      groups.set(key, group);
+    }
+
+    for (const reviews of groups.values()) {
+      for (let index = 0; index < reviews.length; index += 1) {
+        const review = reviews[index];
+        if (review.duplicate_of) continue;
+        const normalizedText = normalizeReviewText(review.review_text);
+        const prior = reviews.slice(0, index).find((candidate) => {
+          return (
+            normalizeReviewText(candidate.review_text) === normalizedText &&
+            candidate.product_id === review.product_id
+          );
+        });
+        if (prior) {
+          review.is_duplicate_candidate = true;
+          review.duplicate_of = prior.review_id;
+          review.duplicate_similarity = 1;
+          review.duplicate_reason = `Identical review text and product to review ${prior.review_id}.`;
+        }
+      }
+    }
   }
 
   private save(dataToSave?: DatabaseSchema) {
@@ -308,6 +360,7 @@ class Store {
       fs.renameSync(tempFile, DB_FILE);
     } catch (e) {
       console.error('Failed to write database file atomically:', e);
+      throw new Error('Database write failed.');
     }
   }
 
@@ -331,7 +384,9 @@ class Store {
 
   public saveReview(updated: Review, workspaceId?: string): Review {
     if (workspaceId) updated.workspace_id = workspaceId;
-    const idx = this.data.reviews.findIndex((r) => r.review_id === updated.review_id);
+    const idx = this.data.reviews.findIndex(
+      (r) => r.review_id === updated.review_id && r.workspace_id === workspaceId
+    );
     if (idx >= 0) {
       this.data.reviews[idx] = updated;
     } else {
@@ -378,7 +433,10 @@ class Store {
 
     // Detect duplicate candidates based on text similarity or identical IDs
     const existingMap = new Map<string, Review>();
-    this.getReviews(workspaceId).forEach((r) => existingMap.set(r.review_id, r));
+    const workingReviews = this.getReviews(workspaceId);
+    workingReviews.forEach((r) => existingMap.set(r.review_id, r));
+
+    let detectedDuplicateCandidates = 0;
 
     for (const incoming of newReviews) {
       if (workspaceId) incoming.workspace_id = workspaceId;
@@ -386,35 +444,79 @@ class Store {
         // Update existing record without inflating duplicate counts
         const idx = this.data.reviews.findIndex((r) => r.review_id === incoming.review_id && r.workspace_id === workspaceId);
         if (idx >= 0) {
+          const existing = this.data.reviews[idx];
           this.data.reviews[idx] = {
-            ...this.data.reviews[idx],
+            ...existing,
             ...incoming,
             // preserve any manual overrides
-            issues: this.data.reviews[idx].analysis_method === 'manual_override'
-              ? this.data.reviews[idx].issues
+            issues: existing.analysis_method === 'manual_override'
+              ? existing.issues
               : incoming.issues
           };
+          if (incoming.duplicate_of === undefined && existing.duplicate_of !== undefined) {
+            this.data.reviews[idx].duplicate_of = existing.duplicate_of;
+          }
+          if (incoming.is_duplicate_candidate === undefined && existing.is_duplicate_candidate !== undefined) {
+            this.data.reviews[idx].is_duplicate_candidate = existing.is_duplicate_candidate;
+          }
+          if (incoming.duplicate_similarity === undefined && existing.duplicate_similarity !== undefined) {
+            this.data.reviews[idx].duplicate_similarity = existing.duplicate_similarity;
+          }
+          if (incoming.duplicate_reason === undefined && existing.duplicate_reason !== undefined) {
+            this.data.reviews[idx].duplicate_reason = existing.duplicate_reason;
+          }
           updated++;
         }
       } else {
-        // Check for text-similarity duplicate candidate
-        for (const existing of this.getReviews(workspaceId)) {
+        const existingReviews = workingReviews;
+        const explicitCanonical = incoming.duplicate_of
+          ? existingReviews.find((review) => review.review_id === incoming.duplicate_of)
+          : undefined;
+        const normalizedIncoming = normalizeReviewText(incoming.review_text);
+        let bestMatch: { review: Review; similarity: number } | undefined;
+
+        for (const existing of existingReviews) {
+          const similarity = textSimilarity(incoming.review_text, existing.review_text);
+          const sameProduct = existing.product_id === incoming.product_id;
+          const exactText = normalizedIncoming === normalizeReviewText(existing.review_text);
           if (
-            existing.product_id === incoming.product_id &&
-            existing.review_text.trim().toLowerCase() === incoming.review_text.trim().toLowerCase()
+            (sameProduct && exactText) ||
+            (sameProduct && similarity >= this.getSettings(workspaceId).duplicate_similarity_threshold) ||
+            (!sameProduct && exactText)
           ) {
-            incoming.is_duplicate_candidate = true;
-            incoming.duplicate_of = existing.review_id;
-            incoming.duplicate_similarity = 1.0;
-            incoming.duplicate_reason = `Identical text to review ${existing.review_id}`;
-            break;
+            if (!bestMatch || similarity > bestMatch.similarity) {
+              bestMatch = { review: existing, similarity };
+            }
           }
         }
+
+        const match = explicitCanonical || bestMatch?.review;
+        if (match) {
+          const similarity = explicitCanonical ? 1 : bestMatch?.similarity || 0;
+          const sameProduct = match.product_id === incoming.product_id;
+          const exactText = normalizedIncoming === normalizeReviewText(match.review_text);
+          incoming.is_duplicate_candidate = true;
+          incoming.duplicate_similarity = similarity;
+          incoming.duplicate_reason = explicitCanonical
+            ? `Explicit duplicate relationship to review ${match.review_id}.`
+            : exactText
+            ? `Identical review text ${sameProduct ? 'and product' : 'across products'} to review ${match.review_id}.`
+            : `Similar review text and product to review ${match.review_id}.`;
+          if (explicitCanonical || (sameProduct && exactText)) {
+            incoming.duplicate_of = match.review_id;
+          } else {
+            incoming.duplicate_of = undefined;
+          }
+          detectedDuplicateCandidates++;
+        }
         this.data.reviews.push(incoming);
+        workingReviews.push(incoming);
+        existingMap.set(incoming.review_id, incoming);
         added++;
       }
     }
 
+    job.duplicate_candidates = Math.max(job.duplicate_candidates, detectedDuplicateCandidates);
     this.data.importJobs.unshift(job);
     this.save();
 
@@ -433,7 +535,7 @@ class Store {
   }
 
   // OFFICIAL C01 DATASET LOADER (Idempotent, preserves R001-R020 IDs, separates predictions from reference labels)
-  public loadOfficialC01(): {
+  public loadOfficialC01(workspaceId?: string): {
     added: number;
     updated: number;
     total: number;
@@ -472,13 +574,11 @@ class Store {
                 analysis_method: defaultReview?.analysis_method || 'gemini_ai',
                 analyzed_at: defaultReview?.analyzed_at || new Date().toISOString(),
                 needs_human_review: defaultReview?.needs_human_review || false,
-                duplicate_of: pr.review_id === 'R005' ? 'R004' : undefined,
-                is_duplicate_candidate: pr.review_id === 'R005',
-                duplicate_similarity: pr.review_id === 'R005' ? 1.0 : undefined,
-                duplicate_reason:
-                  pr.review_id === 'R005'
-                    ? 'Identical review text and product ID submitted within 3 minutes of R004.'
-                    : undefined
+                duplicate_of: typeof pr.duplicate_of === 'string' ? pr.duplicate_of : undefined,
+                is_duplicate_candidate: pr.is_duplicate_candidate === true ? true : undefined,
+                duplicate_similarity:
+                  typeof pr.duplicate_similarity === 'number' ? pr.duplicate_similarity : undefined,
+                duplicate_reason: typeof pr.duplicate_reason === 'string' ? pr.duplicate_reason : undefined
               };
             });
             break;
@@ -496,13 +596,13 @@ class Store {
       total_rows: reviewsToLoad.length,
       valid_rows: reviewsToLoad.length,
       invalid_rows: 0,
-      duplicate_candidates: 1,
+      duplicate_candidates: 0,
       status: 'completed',
       errors: []
     };
 
-    const importRes = this.importReviews(reviewsToLoad, job);
-    const stats = this.getUniqueReviewStats();
+    const importRes = this.importReviews(reviewsToLoad, job, workspaceId);
+    const stats = this.getUniqueReviewStats(workspaceId);
 
     return {
       added: importRes.added,
@@ -548,7 +648,7 @@ class Store {
   // AGGREGATIONS & METRICS (Respects unique counting rules)
   public getUniqueReviewStats(workspaceId?: string) {
     const all = this.getReviews(workspaceId);
-    const confirmedDuplicates = all.filter((r) => r.duplicate_of && r.is_duplicate_candidate);
+    const confirmedDuplicates = all.filter((r) => Boolean(r.duplicate_of));
     const suspectedDuplicates = all.filter((r) => r.is_duplicate_candidate && !r.duplicate_of);
     const uniqueReviews = all.filter((r) => !r.duplicate_of);
 
@@ -850,6 +950,27 @@ class Store {
         product_name: p.product_name,
         total_unique_reviews: p.unique_reviews.size,
         review_ids: Array.from(p.unique_reviews),
+        supporting_reviews: this.getReviews(workspaceId)
+          .filter((review) => review.product_id === p.product_id && !review.duplicate_of)
+          .sort((left, right) => {
+            const severityRank = (review: Review) =>
+              Math.max(...review.issues.map((issue) => severityRanks[issue.severity]), 0);
+            const severityDifference = severityRank(right) - severityRank(left);
+            if (severityDifference !== 0) return severityDifference;
+            return left.rating - right.rating;
+          })
+          .slice(0, 3)
+          .map((review) => ({
+            review_id: review.review_id,
+            rating: review.rating,
+            review_text: review.review_text,
+            detected_issues: review.issues.map((issue) => issue.category),
+            highest_severity: review.issues.reduce<SeverityLevel>(
+              (highest, issue) =>
+                severityRanks[issue.severity] > severityRanks[highest] ? issue.severity : highest,
+              'low'
+            )
+          })),
         issue_categories: Array.from(p.issue_categories),
         highest_severity: p.highest_severity,
         average_rating: Math.round(avgRating * 10) / 10,
