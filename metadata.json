@@ -1,0 +1,6 @@
+{
+  "name": "Review to Action — Merchant Quality Intelligence",
+  "description": "AI-powered merchant quality intelligence platform converting customer feedback into traceable, evidence-backed product-quality decisions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
