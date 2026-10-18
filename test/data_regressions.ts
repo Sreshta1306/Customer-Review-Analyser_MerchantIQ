@@ -7,7 +7,7 @@ const tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'merchantiq-regression
 process.env.MERCHANTIQ_DATA_DIR = tempDataDir;
 
 try {
-  const [{ Store }, { normalizeImportPayload, parseCsv, parseImportText, validateReviewRecord }, { classifyWithRules }] =
+  const [{ Store }, { normalizeImportPayload, parseCsv, parseImportText, validateReviewRecord }, { classifyWithRules, enrichIssuesWithDeterministicRules }] =
     await Promise.all([
       import('../src/server/db.ts'),
       import('../src/import/parsing.ts'),
@@ -160,6 +160,107 @@ try {
     ),
     ['manufacturing_defects', 'delivery_related_issues']
   );
+  assert.deepEqual(
+    classifyWithRules('The item is good. The box arrived torn.', 4).issues.map(
+      (issue) => issue.category
+    ),
+    ['packaging_problems']
+  );
+  assert.deepEqual(
+    classifyWithRules('The package arrived damaged, but the product works perfectly.', 4).issues.map(
+      (issue) => issue.category
+    ),
+    ['packaging_problems']
+  );
+  assert.deepEqual(
+    classifyWithRules('Support never replied about the late order.', 1).issues.map(
+      (issue) => issue.category
+    ),
+    ['delivery_related_issues', 'other']
+  );
+  assert.deepEqual(
+    classifyWithRules('The item is good. The box arrived torn.', 5).issues.map((issue) => issue.category),
+    ['packaging_problems']
+  );
+  assert.deepEqual(
+    classifyWithRules('The product arrived cracked.', 2).issues.map((issue) => issue.category),
+    ['product_damage']
+  );
+  assert.deepEqual(
+    classifyWithRules('The zipper broke and the package arrived late.', 1).issues.map((issue) => issue.category),
+    ['manufacturing_defects', 'delivery_related_issues']
+  );
+  assert.deepEqual(
+    classifyWithRules('The shirt is too large and the size guide was wrong.', 2).issues.map((issue) => issue.category),
+    ['incorrect_sizing']
+  );
+  assert.deepEqual(
+    classifyWithRules('I received the wrong product.', 1).issues.map((issue) => issue.category),
+    ['incorrect_item_delivered']
+  );
+  assert.deepEqual(
+    classifyWithRules('The required adapter is missing.', 1).issues.map((issue) => issue.category),
+    ['missing_component']
+  );
+  assert.deepEqual(
+    classifyWithRules("The device doesn't work.", 1).issues.map((issue) => issue.category),
+    ['functional_failures']
+  );
+  assert.deepEqual(
+    classifyWithRules('Customer service did not respond to my message.', 1).issues.map((issue) => issue.category),
+    ['other']
+  );
+  assert.deepEqual(
+    classifyWithRules('The box is not damaged, the stitching is strong, and the device works perfectly.', 5).issues.map((issue) => issue.category),
+    ['uncertain'],
+    'Positive and negated category language should not create complaint labels'
+  );
+  assert.deepEqual(
+    classifyWithRules('The size guide was accurate and the zipper stitching is strong.', 5).issues.map((issue) => issue.category),
+    ['uncertain'],
+    'Positive mentions of size guides and construction should not create complaints'
+  );
+  assert.deepEqual(
+    classifyWithRules('The screen is not cracked and the box was not damaged.', 5).issues.map((issue) => issue.category),
+    ['uncertain'],
+    'Explicitly negated damage should not create complaints'
+  );
+  assert.deepEqual(
+    new Set(
+      classifyWithRules(
+        'The product arrived cracked, the wrong item was sent, and a required part is missing.',
+        1
+      ).issues.map((issue) => issue.category)
+    ),
+    new Set(['product_damage', 'incorrect_item_delivered', 'missing_component'])
+  );
+  assert.deepEqual(
+    classifyWithRules('The product looks fine and arrived on time.', 5).issues.map(
+      (issue) => issue.category
+    ),
+    ['uncertain']
+  );
+  assert.deepEqual(
+    enrichIssuesWithDeterministicRules(
+      'The item is good. The box arrived torn.',
+      4,
+      [{
+        category: 'uncertain',
+        evidence: 'The item is good.',
+        confidence: 0.4,
+        severity: 'uncertain'
+      }]
+    ).map((issue) => issue.category),
+    ['packaging_problems'],
+    'Deterministic enrichment should replace an uncertain Gemini result for clear evidence'
+  );
+  assert.deepEqual(
+    enrichIssuesWithDeterministicRules('Support never replied about my late order.', 1, [{
+      category: 'uncertain', evidence: 'Support never replied about my late order.', confidence: 0.4, severity: 'uncertain'
+    }]).map((issue) => issue.category),
+    ['delivery_related_issues', 'other'],
+    'Gemini uncertain should be enriched with every supported deterministic issue'
+  );
   assert.equal(
     classifyWithRules('This product is excellent and works perfectly.', 5).issues[0]?.category,
     'uncertain'
@@ -223,6 +324,16 @@ try {
   workspaceStore.saveReview(delayedReview!);
   const afterReanalysisStats = workspaceStore.getUniqueReviewStats();
   assert.deepEqual(afterReanalysisStats, beforeReanalysisStats);
+  const persistedCountsBeforeRepeat = workspaceStore.getUniqueReviewStats('WS-REGRESSION');
+  for (const review of workspaceStore.getReviews('WS-REGRESSION')) {
+    const result = classifyWithRules(review.review_text, review.rating);
+    review.issues = result.issues;
+    review.analysis_method = 'deterministic_rules';
+    workspaceStore.saveReview(review, 'WS-REGRESSION');
+  }
+  const persistedCountsAfterRepeat = workspaceStore.getUniqueReviewStats('WS-REGRESSION');
+  assert.deepEqual(persistedCountsAfterRepeat, persistedCountsBeforeRepeat, 'Reanalysis must not alter raw, unique, or duplicate review counts');
+  assert.equal(workspaceStore.getReviews('WS-REGRESSION').length, persistedCountsBeforeRepeat.total_imported_records, 'Repeated analysis must preserve all raw review records');
   console.log('Regression checks passed: 20 fixture records, 19 unique, 1 confirmed duplicate.');
 } finally {
   fs.rmSync(tempDataDir, { recursive: true, force: true });

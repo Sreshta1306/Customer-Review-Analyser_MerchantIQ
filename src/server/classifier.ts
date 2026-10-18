@@ -53,7 +53,11 @@ function getDeliveryDelayIssue(reviewText: string): IssueLabel | null {
     /\b(?:package|parcel|shipment|order)\s+arrived\s+late\b/i,
     /\border\s+took\s+too\s+long\s+to\s+arrive\b/i,
     /\bnever\s+received\s+(?:the\s+)?order\b/i,
-    /\bdelivery\s+(?:was\s+)?late\b/i
+    /\bdelivery\s+(?:was\s+)?late\b/i,
+    /\blate\s+order\b/i,
+    /\b(?:shipment|delivery|order)\s+(?:is|was|has been)\s+late\b/i,
+    /\b(?:delivery|shipment|order)\s+(?:problem|issue|trouble)s?\b/i,
+    /\b(?:order|package|parcel)\s+(?:has not|hasn't|never)\s+arrived\b/i
   ];
   const matchedPattern = deliveryDelayPatterns.find((pattern) => pattern.test(text));
   if (!matchedPattern) return null;
@@ -66,6 +70,22 @@ function getDeliveryDelayIssue(reviewText: string): IssueLabel | null {
     severity: 'medium',
     rationale: 'Explicit delivery delay or non-receipt complaint detected.'
   };
+}
+
+export function enrichIssuesWithDeterministicRules(
+  reviewText: string,
+  rating: number,
+  issues: IssueLabel[]
+): IssueLabel[] {
+  const deterministicIssues = classifyWithRules(reviewText, rating).issues
+    .filter((issue) => issue.category !== 'uncertain');
+  const enrichedIssues = [...issues.filter((issue) => issue.category !== 'uncertain')];
+  for (const issue of deterministicIssues) {
+    if (!enrichedIssues.some((existing) => existing.category === issue.category)) {
+      enrichedIssues.push(issue);
+    }
+  }
+  return enrichedIssues.length > 0 ? enrichedIssues : issues;
 }
 
 /**
@@ -120,7 +140,7 @@ export function classifyWithRules(reviewText: string, rating: number): {
 
   // Functional Failure / Thermostat
   if (
-    text.includes('thermostat') ||
+    (text.includes('thermostat') && /\b(?:does not regulate|doesn't regulate|malfunction|not working|fails?)\b/i.test(text)) ||
     (text.includes('does not regulate') && text.includes('heat')) ||
     text.includes('shuts off completely')
   ) {
@@ -137,23 +157,9 @@ export function classifyWithRules(reviewText: string, rating: number): {
   if (
     text.includes('warzone') ||
     (text.includes('survived') && text.includes('package')) ||
-    text.includes('cracked') ||
-    text.includes('shattered') ||
     text.includes('crushed flat') ||
     text.includes('bubble wrap')
   ) {
-    if (text.includes('pitcher') || text.includes('blender') || text.includes('screen') || text.includes('scale')) {
-      issues.push({
-        category: 'product_damage',
-        evidence: reviewText.includes('blender pitcher')
-          ? 'blender pitcher is completely cracked'
-          : 'Glass screen on the digital scale arrived cracked corner to corner',
-        confidence: 0.95,
-        severity: 'high',
-        rationale: 'Severe transit impact resulting in fractured glass/plastic.'
-      });
-    }
-
     if (text.includes('warzone') || text.includes('package') || text.includes('crushed') || text.includes('bubble wrap')) {
       issues.push({
         category: 'packaging_problems',
@@ -168,13 +174,48 @@ export function classifyWithRules(reviewText: string, rating: number): {
   }
 
   // Damage upon arrival (e.g., Multi-issue review: shoes arrived damaged)
-  if (text.includes('arrived damaged') || (text.includes('damaged') && !issues.some((i) => i.category === 'product_damage'))) {
+  const hasPackagingDamage = /\b(?:box|package|packaging|carton|parcel|outer cardboard)\b[^.!?]*(?:torn|ripped|crushed|smashed|damaged)\b/i.test(
+    reviewText
+  );
+  const productArrivalDamageMatch = reviewText.match(/\b(?:arrived|was|is|were)\s+(?:broken|cracked|dented|damaged|shattered)\b/i);
+  if (
+    productArrivalDamageMatch &&
+    !/\b(?:not|never|wasn't|isn't|is not)\b[^.!?]{0,24}\b(?:broken|cracked|dented|damaged|shattered)\b/i.test(reviewText) &&
+    !hasPackagingDamage
+  ) {
     issues.push({
       category: 'product_damage',
-      evidence: 'shoes arrived damaged',
+      evidence: productArrivalDamageMatch[0],
       confidence: 0.96,
       severity: 'high',
       rationale: 'Customer explicitly reported product arrived in damaged state.'
+    });
+  }
+
+  // Contextual packaging and product damage
+  const packagingMatch = reviewText.match(
+    /\b(?:box|package|packaging|carton|parcel|outer cardboard)\b[^.!?]*\b(?:torn|ripped|crushed|smashed|damaged)\b/i
+  );
+  if (packagingMatch && !/\b(?:not|never|wasn't|isn't|is not)\b[^.!?]{0,24}\b(?:torn|ripped|crushed|smashed|damaged)\b/i.test(packagingMatch[0]) && !issues.some((issue) => issue.category === 'packaging_problems')) {
+    issues.push({
+      category: 'packaging_problems',
+      evidence: packagingMatch[0],
+      confidence: 0.95,
+      severity: 'medium',
+      rationale: 'Packaging damage was explicitly reported in the review.'
+    });
+  }
+
+  const productDamageMatch = reviewText.match(
+    /\b(?:product|item|shoes?|blender pitcher|screen|glass|housing|device)\b[^.!?]*\b(?:arrived|was|is|were|looks?)\b[^.!?]*\b(?:broken|cracked|dented|damaged|shattered)\b/i
+  );
+  if (productDamageMatch && !/\b(?:not|never|wasn't|isn't|is not)\b[^.!?]{0,24}\b(?:broken|cracked|dented|damaged|shattered)\b/i.test(productDamageMatch[0]) && !issues.some((issue) => issue.category === 'product_damage')) {
+    issues.push({
+      category: 'product_damage',
+      evidence: productDamageMatch[0],
+      confidence: 0.95,
+      severity: 'high',
+      rationale: 'The product itself was explicitly reported as damaged.'
     });
   }
 
@@ -183,14 +224,18 @@ export function classifyWithRules(reviewText: string, rating: number): {
     text.includes('too small') ||
     text.includes('too tight') ||
     text.includes('too big') ||
-    text.includes('sleeves are at least') ||
-    text.includes('size chart')
+    text.includes('too large') ||
+    text.includes('too loose') ||
+    text.includes('wrong fit') ||
+    text.includes('does not fit') ||
+    /\bsize (?:guide|chart)\b[^.!?]{0,60}\b(?:wrong|inaccurate|mismatch|off|incorrect|doesn't match|did not match)\b/i.test(text) ||
+    /\b(?:wrong|inaccurate|mismatch|off|incorrect)\b[^.!?]{0,60}\bsize (?:guide|chart)\b/i.test(text) ||
+    text.includes('sleeves are at least')
   ) {
+    const sizingEvidence = reviewText.match(/\b(?:too small|too tight|too big|too large|too loose|wrong fit|does not fit|sleeves are at least|size (?:guide|chart)[^.!?]{0,60}(?:wrong|inaccurate|mismatch|off|incorrect|doesn't match|did not match)|(?:wrong|inaccurate|mismatch|off|incorrect)[^.!?]{0,60}size (?:guide|chart))\b/i);
     issues.push({
       category: 'incorrect_sizing',
-      evidence: text.includes('too small')
-        ? 'size is too small'
-        : 'Sleeves are at least three inches too long and chest is way tighter',
+      evidence: sizingEvidence?.[0] || reviewText.slice(0, 80),
       confidence: 0.95,
       severity: 'medium',
       rationale: 'Garment pattern dimensions do not align with published size chart.'
@@ -200,19 +245,18 @@ export function classifyWithRules(reviewText: string, rating: number): {
   // Manufacturing defects: Zipper, Seam, Stitching, Sole detachment, Buttons
   if (
     text.includes('zipper broke') ||
-    text.includes('teeth alignment') ||
+    text.includes('broken zipper') ||
+    (text.includes('teeth alignment') && /\b(?:zipper broke|broken zipper|misaligned|useless)\b/i.test(text)) ||
+    text.includes('loose stitching') ||
     text.includes('sole detached') ||
     text.includes('seam tore') ||
-    text.includes('stitching') ||
+    text.includes('seam tear') ||
+    text.includes('assembly defect') ||
     text.includes('missed by the sewing machine') ||
     text.includes('buttons popped')
   ) {
-    let quote = 'manufacturing defect';
-    if (text.includes('zipper broke')) quote = 'Zipper broke on first wear, completely useless teeth alignment';
-    else if (text.includes('sole detached')) quote = 'sole detached from heel';
-    else if (text.includes('seam tore')) quote = 'Seam tore open on the side';
-    else if (text.includes('stitching') || text.includes('pocket')) quote = 'Stitching along the left pocket was completely missed by the sewing machine';
-    else if (text.includes('buttons popped')) quote = 'two buttons popped off right out of the bag';
+    const manufacturingEvidence = reviewText.match(/\b(?:zipper\s+(?:broke|failed)|broken zipper|sole detached(?: from heel)?|seam (?:tore|tear|split|ripped)|loose stitching|stitching[^.!?]{0,50}(?:missed|came loose|came undone)|assembly defect|buttons popped[^.!?]{0,30})\b/i);
+    const quote = manufacturingEvidence?.[0] || reviewText.slice(0, 80);
 
     issues.push({
       category: 'manufacturing_defects',
@@ -223,36 +267,39 @@ export function classifyWithRules(reviewText: string, rating: number): {
     });
   }
 
-  // Missing components
-  if (
-    text.includes('were missing') ||
-    text.includes('missing') ||
-    text.includes('nowhere to be found') ||
-    text.includes('portafilter') ||
-    text.includes('bolts pack') ||
-    text.includes('allen key')
-  ) {
+  // Match common manufacturing flaws with evidence taken from the source text.
+  const manufacturingMatch = reviewText.match(/\b(?:zipper\s+(?:broke|broke off|failed)|broken zipper|loose stitching|stitching\s+(?:came loose|came undone|is loose)|seam\s+(?:tore|split|came apart|ripped)|assembly defect)\b/i);
+  if (manufacturingMatch && !issues.some((issue) => issue.category === 'manufacturing_defects')) {
+    issues.push({ category: 'manufacturing_defects', evidence: manufacturingMatch[0], confidence: 0.95, severity: 'high', rationale: 'A specific construction or assembly defect was reported.' });
+  }
+
+  // Missing components, with the component and absence expressed in context.
+  const missingComponentMatch = reviewText.match(/\b(?:(?:portafilter(?: handle)?|tamper|part|piece|component|accessory|adapter|charger|cable|screw|bolt|handle)\b[^.!?]{0,50}\b(?:is|are|was|were)?\s*missing|missing\s+(?:the\s+)?(?:required\s+)?(?:portafilter(?: handle)?|tamper|part|piece|component|accessory|adapter|charger|cable|screw|bolt|handle)\b|(?:bolts pack|allen key)[^.!?]{0,40}nowhere to be found)\b/i);
+  if (missingComponentMatch) {
     issues.push({
       category: 'missing_component',
-      evidence: text.includes('portafilter')
-        ? 'portafilter handle and tamper were missing'
-        : 'bolts pack and allen key were nowhere to be found',
+      evidence: missingComponentMatch[0],
       confidence: 0.98,
       severity: 'medium',
-      rationale: 'Packaged kit incomplete at time of unboxing.'
+      rationale: 'A required component or accessory was explicitly reported missing.'
     });
+  }
+  const explicitWrongItem = reviewText.match(/\b(?:wrong (?:item|product|order)|received the wrong [\w -]+|sent the wrong [\w -]+|got the wrong [\w -]+)\b/i);
+  if (explicitWrongItem && !issues.some((issue) => issue.category === 'incorrect_item_delivered')) {
+    issues.push({ category: 'incorrect_item_delivered', evidence: explicitWrongItem[0], confidence: 0.96, severity: 'medium', rationale: 'The customer explicitly reports receiving an item different from the one ordered.' });
   }
 
   // Incorrect item delivered
   if (
-    text.includes('got a pink canvas tote') ||
-    text.includes('instead') ||
-    text.includes('wrong item') ||
-    (text.includes('ordered') && text.includes('received'))
+    !issues.some((issue) => issue.category === 'incorrect_item_delivered') &&
+    (text.includes('got a pink canvas tote') ||
+      text.includes('wrong item') ||
+      text.includes('wrong product') ||
+      text.includes('wrong order'))
   ) {
     issues.push({
       category: 'incorrect_item_delivered',
-      evidence: 'got a pink canvas tote bag instead',
+      evidence: explicitWrongItem?.[0] || 'got a pink canvas tote bag instead',
       confidence: 0.99,
       severity: 'medium',
       rationale: 'Warehouse barcode / bin pick error.'
@@ -276,6 +323,37 @@ export function classifyWithRules(reviewText: string, rating: number): {
   }
   if (deliveryDelayIssue) {
     issues.push(deliveryDelayIssue);
+  }
+
+  // Customer support complaints use the existing general-feedback category.
+  const supportMatch = reviewText.match(
+    /\b(?:support|customer service|help desk)\b[^.!?]*(?:never replied|did not reply|didn't reply|failed to respond|never responded|did not respond|didn't respond)\b/i
+  );
+  if (supportMatch && !issues.some((issue) => issue.category === 'other')) {
+    issues.push({
+      category: 'other',
+      evidence: supportMatch[0],
+      confidence: 0.94,
+      severity: 'medium',
+      rationale: 'Customer support failed to respond to the reported issue.'
+    });
+  }
+
+  // Explicit product or feature malfunction
+  if (
+    /\b(?:does not|doesn't|did not|didn't|won't|will not|stopped)\s+(?:work|function|turn on)\b/i.test(text) ||
+    text.includes('not functioning') ||
+    text.includes('malfunction')
+  ) {
+    if (!issues.some((issue) => issue.category === 'functional_failures')) {
+      issues.push({
+        category: 'functional_failures',
+        evidence: reviewText.match(/\b(?:does not|doesn't|did not|didn't|won't|will not|stopped)\s+(?:work|function|turn on)\b/i)?.[0] || 'malfunction',
+        confidence: 0.94,
+        severity: 'high',
+        rationale: 'The product or feature was explicitly reported as non-functional.'
+      });
+    }
   }
 
   // Poor material quality
@@ -518,15 +596,11 @@ Review Text: "${review.review_text.replace(/"/g, '\\"')}"`;
             };
           });
 
-          const explicitDeliveryIssue = getDeliveryDelayIssue(review.review_text);
-          const normalizedIssues = explicitDeliveryIssue
-            ? [
-                ...validIssues.filter((issue) => issue.category !== 'uncertain'),
-                ...(validIssues.some((issue) => issue.category === 'delivery_related_issues')
-                  ? []
-                  : [explicitDeliveryIssue])
-              ]
-            : validIssues;
+          const normalizedIssues = enrichIssuesWithDeterministicRules(
+            review.review_text,
+            review.rating,
+            validIssues
+          );
 
           return {
             issues: normalizedIssues,
