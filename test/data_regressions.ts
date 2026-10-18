@@ -366,6 +366,12 @@ try {
   assert.deepEqual(sameIdStore.getReviews('WS-SHARED')[1].issues, sharedReview.issues,
     'Saving a review reference must persist that exact canonical row');
   assert.equal(sameIdStore.getUniqueReviewStats('WS-SHARED').total_imported_records, 2);
+
+  const assumptionsStore = new Store(false);
+  assumptionsStore.updateBusinessAssumptions({ monthly_subscription_usd: 123 }, 'WS-ASSUMPTIONS-A');
+  assert.equal(assumptionsStore.getBusinessAssumptions('WS-ASSUMPTIONS-A').monthly_subscription_usd, 123);
+  assert.notEqual(assumptionsStore.getBusinessAssumptions('WS-ASSUMPTIONS-B').monthly_subscription_usd, 123,
+    'Workspace business assumptions must remain isolated');
   console.log('Regression checks passed: 20 fixture records, 19 unique, 1 confirmed duplicate.');
 } finally {
   fs.rmSync(tempDataDir, { recursive: true, force: true });

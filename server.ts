@@ -902,7 +902,7 @@ app.get('/api/export/json', (req: Request, res: Response) => {
       actions: db.getActions(workspaceId),
       decisions: db.getDecisions(workspaceId),
       evaluation: runEvaluationBenchmark(db.getReviews(workspaceId)),
-      business_assumptions: db.getBusinessAssumptions()
+      business_assumptions: db.getBusinessAssumptions(workspaceId)
     };
 
     res.setHeader('Content-Type', 'application/json');
