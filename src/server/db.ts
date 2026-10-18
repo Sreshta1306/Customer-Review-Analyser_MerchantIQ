@@ -22,8 +22,6 @@ import {
   INITIAL_SETTINGS,
   INITIAL_BUSINESS_ASSUMPTIONS,
   ACTION_COST_TABLE,
-  INITIAL_CUSTOMER_INTERVIEWS,
-  INITIAL_PILOT_EXPERIMENT
 } from './seedData';
 
 const DATA_DIR = path.resolve(process.env.MERCHANTIQ_DATA_DIR || path.join(process.cwd(), 'data'));
@@ -133,155 +131,21 @@ export class Store {
   }
 
   private getDefaultState(): DatabaseSchema {
-    const initialActions: CorrectiveAction[] = [
-      {
-        action_id: 'ACT-001',
-        issue_category: 'manufacturing_defects',
-        issue_title: 'Garment Seam & Zipper Assembly Failures',
-        affected_products: ['PROD-JACKET-12', 'PROD-PANTS-11'],
-        recommended_action: 'Audit tier-1 apparel stitching machines and reinforce zipper teeth pull-strength specification.',
-        rationale: 'Multiple unique returns reported broken teeth and unstitched pocket seams within first week of wear.',
-        assigned_team: 'Supplier Management',
-        owner_name: 'Elena Rostova (QA Lead)',
-        priority: 'P1 - High',
-        severity: 'high',
-        estimated_cost_usd: 650,
-        expected_benefit: 'Estimated 22% reduction in apparel warranty returns ($1,420 monthly return handling savings).',
-        status: 'Approved',
-        due_date: '2026-10-28',
-        created_at: '2026-10-15T10:00:00Z',
-        updated_at: '2026-10-16T11:30:00Z',
-        reviewer_notes: 'Scope adjusted from 4 products down to the top 2 verified jacket/pants models to focus supplier testing.',
-        supporting_review_ids: ['R004', 'R017'],
-        is_negotiated: true
-      },
-      {
-        action_id: 'ACT-002',
-        issue_category: 'functional_failures',
-        issue_title: 'Thermal Cord Safety Arcing & Thermostat Cutoff',
-        affected_products: ['PROD-HEAT-03'],
-        recommended_action: 'Immediate factory quarantine of power cord lot #26-09 and independent electrical resistance lab certification.',
-        rationale: 'Smoke and electrical sparks reported. Critical life-safety risk taking priority over routine high-volume cosmetic flaws.',
-        assigned_team: 'Quality Assurance',
-        owner_name: 'Marcus Vance (Safety Director)',
-        priority: 'P0 - Critical',
-        severity: 'critical',
-        estimated_cost_usd: 950,
-        expected_benefit: 'Zero liability incidents, prevents catastrophic recall and customer safety damage.',
-        status: 'In Progress',
-        due_date: '2026-10-22',
-        created_at: '2026-10-16T08:00:00Z',
-        updated_at: '2026-10-16T14:00:00Z',
-        reviewer_notes: 'P0 expedited action. Contacted supplier electrical engineer immediately.',
-        supporting_review_ids: ['R003', 'R014'],
-        is_negotiated: false
-      },
-      {
-        action_id: 'ACT-003',
-        issue_category: 'packaging_problems',
-        issue_title: 'Transit Drop Shock and Glass Container Breakage',
-        affected_products: ['PROD-BLEND-08', 'PROD-GIFT-02'],
-        recommended_action: 'Upgrade shipper cartons to double-wall corrugated 250 GSM and mandate molded pulp corner inserts.',
-        rationale: 'Glass screens and blender pitchers fractured due to zero bubble cushioning and flat carton compression.',
-        assigned_team: 'Packaging & Unboxing',
-        owner_name: 'Liam Chen (Packaging Spec Lead)',
-        priority: 'P1 - High',
-        severity: 'high',
-        estimated_cost_usd: 420,
-        expected_benefit: 'Expected 35% reduction in transit breakage claims.',
-        status: 'Under Review',
-        due_date: '2026-10-30',
-        created_at: '2026-10-16T11:00:00Z',
-        updated_at: '2026-10-16T11:00:00Z',
-        reviewer_notes: 'Samples of molded pulp inserts requested from regional corrugated partner.',
-        supporting_review_ids: ['R002', 'R013'],
-        is_negotiated: false
-      }
-    ];
-
-    const initialDecisions: DecisionVersion[] = [
-      {
-        decision_id: 'DEC-001',
-        issue_category: 'manufacturing_defects',
-        issue_title: 'Apparel Seam & Zipper Integrity',
-        timestamp: '2026-10-16T11:30:00Z',
-        created_by: 'Elena Rostova (Merchant Quality Lead)',
-        original_ranking: 1,
-        original_scope_product_ids: ['PROD-JACKET-12', 'PROD-PANTS-11', 'PROD-KNIT-07', 'PROD-UNKNOWN'],
-        original_recommendation: 'Issue blanket supplier warning across all 4 apparel SKUs and halt all apparel shipments.',
-        original_team: 'Manufacturing & Production',
-        original_priority: 'P1 - High',
-        final_scope_product_ids: ['PROD-JACKET-12', 'PROD-PANTS-11'],
-        final_corrective_action: 'Prioritize physical factory pull-test on Alpine Jacket zippers and pocket seam tension for Commuter Chino only; keep knitwear active pending further data.',
-        final_team: 'Supplier Management',
-        final_priority: 'P1 - High',
-        scope_change_reason: 'Apparel halt would damage critical Q4 sales; focused inspection on 2 confirmed high-frequency SKUs isolates root cause without revenue disruption.',
-        evidence_reviewed_count: 3,
-        negotiation_notes: 'Negotiated with Operations VP. Knitted sweater button pop was isolated to 1 review and rated low severity, so removed from immediate batch audit.',
-        status: 'Agreed',
-        version: 1
-      }
-    ];
-
-    const initialAudit: AuditLogEntry[] = [
-      {
-        log_id: 'AUD-001',
-        event_type: 'IMPORT_COMPLETED',
-        entity_id: 'FIXTURE_C01',
-        entity_type: 'dataset',
-        timestamp: '2026-10-16T14:30:00Z',
-        user: 'System Seed Service',
-        details: 'Ingested 20 starter judge reviews from official fixture. Deduplicated duplicate candidates.'
-      },
-      {
-        log_id: 'AUD-002',
-        event_type: 'ANALYSIS_RUN',
-        entity_id: 'RUN-20261016',
-        entity_type: 'review',
-        timestamp: '2026-10-16T14:31:00Z',
-        user: 'Gemini Intelligence Engine',
-        details: 'Classified 20 reviews with multi-label extraction and citation evidence.'
-      },
-      {
-        log_id: 'AUD-003',
-        event_type: 'SCOPE_NEGOTIATED',
-        entity_id: 'DEC-001',
-        entity_type: 'decision',
-        timestamp: '2026-10-16T15:00:00Z',
-        user: 'Elena Rostova (Quality Lead)',
-        previous_value: 'Scope: 4 products (blanket factory halt)',
-        new_value: 'Scope: 2 products (targeted zipper/seam audit)',
-        details: 'Negotiated scope to balance defect remediation with merchant sales continuity.'
-      }
-    ];
-
-    const initialImportJob: ImportJob = {
-      job_id: 'JOB-20261016-01',
-      filename: 'Starter_Data/C01/fixture.json',
-      imported_at: '2026-10-16T14:30:00Z',
-      total_rows: 20,
-      valid_rows: 20,
-      invalid_rows: 0,
-      duplicate_candidates: 1,
-      status: 'completed',
-      errors: []
-    };
-
     return {
       users: [],
       sessions: [],
-      reviews: STARTER_REVIEWS_FIXTURE,
-      actions: initialActions,
-      decisions: initialDecisions,
-      auditLogs: initialAudit,
-      interviews: INITIAL_CUSTOMER_INTERVIEWS,
-      pilots: [INITIAL_PILOT_EXPERIMENT],
+      reviews: [],
+      actions: [],
+      decisions: [],
+      auditLogs: [],
+      interviews: [],
+      pilots: [],
       settings: INITIAL_SETTINGS,
       businessAssumptions: INITIAL_BUSINESS_ASSUMPTIONS,
       actionCostTable: ACTION_COST_TABLE,
-      importJobs: [initialImportJob]
-      ,settingsByWorkspace: {}
-      ,businessAssumptionsByWorkspace: {}
+      importJobs: [],
+      settingsByWorkspace: {},
+      businessAssumptionsByWorkspace: {}
     };
   }
 
@@ -892,7 +756,7 @@ export class Store {
       }
 
       // Check if any open action exists
-      const existingAction = this.data.actions.find((a) => a.issue_category === category);
+      const existingAction = this.getActions(workspaceId).find((a) => a.issue_category === category);
       const investigation_status: IssueSummary['investigation_status'] = existingAction
         ? existingAction.status === 'Completed'
           ? 'resolved'

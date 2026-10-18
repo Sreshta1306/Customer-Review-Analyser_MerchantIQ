@@ -123,15 +123,15 @@ export const ReportsExports: React.FC = () => {
               EXECUTIVE QUALITY AUDIT REPORT
             </span>
             <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-              Review to Action — Quality Intelligence Briefing
+              Workspace Review Quality Report
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Dataset: Starter_Data/C01/fixture.json · Generated: {new Date().toLocaleString()}
+              Dataset: {stats.total_imported_records > 0 ? 'Current workspace reviews' : 'No customer review dataset uploaded'} · Generated: {new Date().toLocaleString()}
             </p>
           </div>
           <div className="text-right text-xs text-slate-400">
-            <div>Fynd × NMIMS Hackathon</div>
-            <div>Problem Statement C01</div>
+            <div>MerchantIQ</div>
+            <div>Workspace analysis</div>
           </div>
         </div>
 

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { db, ImportJob, hashPassword, UserRecord, SessionRecord } from './src/server/db';
 import {
   classifyReview,
+  classifyWithRules,
   runEvaluationBenchmark,
   ALLOWED_CATEGORIES,
   isGeminiConfigured
@@ -662,42 +663,71 @@ app.get('/api/audit-log', (req: Request, res: Response) => {
   res.json({ logs: db.getAuditLogs(getWorkspaceId(req)) });
 });
 
-// Load Official C01 Dataset (20 judge-labelled reviews, idempotent, non-destructive)
+// The C01 fixture is benchmark data. It is never inserted into a merchant workspace.
 app.post('/api/dataset/load-c01', (req: Request, res: Response) => {
-  try {
-    const result = db.loadOfficialC01(getWorkspaceId(req));
-    res.json({
-      success: true,
-      message: 'Official C01 dataset (20 reviews) loaded successfully.',
-      ...result
-    });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+  res.status(410).json({
+    success: false,
+    error: 'The C01 judge fixture is evaluation-only and is not imported into customer review data.',
+    evaluation_url: '/api/evaluation/benchmark?dataset=c01_official&mode=c01_official'
+  });
 });
 
-// Get Official C01 Fixture Raw Metadata
+// Get official C01 fixture metadata for explicit inspection only.
 app.get('/api/dataset/c01-fixture', (req: Request, res: Response) => {
   try {
     const fixturePath = path.resolve(process.cwd(), 'Starter_Data/C01/fixture.json');
-    if (fs.existsSync(fixturePath)) {
-      const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf-8'));
-      res.json({ fixture });
-    } else {
-      res.status(404).json({ error: 'C01 fixture file not found' });
-    }
+    if (!fs.existsSync(fixturePath)) return res.status(404).json({ error: 'C01 fixture file not found' });
+    res.json({ fixture: JSON.parse(fs.readFileSync(fixturePath, 'utf-8')) });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Evaluation Lab Benchmark (Calculates Precision, Recall, F1, exact-match, agreed labels against 20 ground truth judge reviews)
+// Evaluation is opt-in and always runs on the separate official fixture,
+// using the deterministic classifier so no merchant data or Gemini quota is involved.
 app.get('/api/evaluation/benchmark', (req: Request, res: Response) => {
   try {
-    const mode = (req.query.mode as string) === 'granular_taxonomy' ? 'granular_taxonomy' : 'c01_official';
-    const reviews = db.getQuarantinedReviews();
-    const evaluation = runEvaluationBenchmark(reviews, mode);
-    res.json({ evaluation });
+    if (req.query.dataset !== 'c01_official') {
+      return res.status(400).json({
+        error: 'Select the official C01 benchmark explicitly with dataset=c01_official.'
+      });
+    }
+
+    const mode = req.query.mode === 'granular_taxonomy' ? 'granular_taxonomy' : 'c01_official';
+    const fixturePath = path.resolve(process.cwd(), 'Starter_Data/C01/fixture.json');
+    if (!fs.existsSync(fixturePath)) {
+      return res.status(503).json({ error: 'The official C01 benchmark fixture is unavailable.' });
+    }
+    const fixture = JSON.parse(fs.readFileSync(fixturePath, 'utf-8'));
+    if (!Array.isArray(fixture.reviews) || fixture.reviews.length === 0) {
+      return res.status(503).json({ error: 'The official C01 benchmark fixture is invalid or empty.' });
+    }
+
+    const benchmarkReviews: Review[] = fixture.reviews.map((source: any) => {
+      const prediction = classifyWithRules(String(source.review_text || ''), Number(source.rating) || 0);
+      return {
+        review_id: String(source.review_id),
+        product_id: String(source.product_id || 'PROD-UNKNOWN'),
+        product_name: String(source.product_name || source.product_id || 'Unknown Product'),
+        review_text: String(source.review_text || ''),
+        rating: Number(source.rating) || 0,
+        created_at: String(source.created_at || ''),
+        issues: prediction.issues,
+        sentiment: prediction.sentiment,
+        analysis_method: 'deterministic_rules',
+        needs_human_review: prediction.needs_human_review
+      };
+    });
+    const evaluation = runEvaluationBenchmark(benchmarkReviews, mode);
+    res.json({
+      dataset: {
+        id: 'c01_official',
+        name: 'Official C01 judge-labelled benchmark fixture',
+        source: 'Starter_Data/C01/fixture.json',
+        analysis_method: 'deterministic_rules'
+      },
+      evaluation
+    });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

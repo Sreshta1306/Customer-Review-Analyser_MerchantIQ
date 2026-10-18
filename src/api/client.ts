@@ -270,7 +270,7 @@ export const api = {
   async getEvaluationBenchmark(
     mode: 'c01_official' | 'granular_taxonomy' = 'c01_official'
   ): Promise<{ evaluation: EvaluationSummary }> {
-    const res = await fetch(`/api/evaluation/benchmark?mode=${mode}`);
+    const res = await fetch(`/api/evaluation/benchmark?dataset=c01_official&mode=${mode}`);
     if (!res.ok) throw new Error('Failed to fetch evaluation benchmark');
     return res.json();
   },

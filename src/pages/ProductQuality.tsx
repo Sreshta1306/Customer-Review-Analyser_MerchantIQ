@@ -92,8 +92,10 @@ export const ProductQuality: React.FC = () => {
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={PackageCheck}
-            title="No matching products found"
-            description="Clear your search term to see all monitored catalog items."
+            title={products.length === 0 ? 'No product data yet' : 'No matching products found'}
+            description={products.length === 0
+              ? 'Upload a JSON or CSV review dataset in Review Explorer. Products will be derived from the uploaded reviews.'
+              : 'Clear your search term to see all products derived from this workspace review data.'}
           />
         ) : (
           <div className="overflow-x-auto">

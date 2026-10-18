@@ -154,7 +154,17 @@ export const IssueIntelligence: React.FC<IssueIntelligenceProps> = ({ onNavigate
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {sortedIssues.slice(0, 3).map((issue, idx) => (
+          {sortedIssues.length === 0 ? (
+            <div className="md:col-span-3">
+              <EmptyState
+                icon={AlertOctagon}
+                title="No issue groups yet"
+                description="Upload customer reviews in JSON or CSV format. Issue groups and evidence will appear after the uploaded text is analyzed."
+                actionLabel="Import reviews"
+                onAction={() => onNavigate('explorer')}
+              />
+            </div>
+          ) : sortedIssues.slice(0, 3).map((issue, idx) => (
             <div
               key={issue.category}
               className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs flex flex-col justify-between hover:border-indigo-300 transition-colors cursor-pointer"

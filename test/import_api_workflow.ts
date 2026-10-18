@@ -117,6 +117,29 @@ try {
   assert.equal(badLogin.status, 401, 'invalid passwords must be rejected');
   const firstCookie = await login('first@example.test');
 
+  const emptyStats = await request('/api/stats', firstCookie);
+  assert.equal(emptyStats.status, 200);
+  const initialStats = await emptyStats.json() as { total_imported_records: number; valid_unique_reviews: number; issues_detected_count: number };
+  assert.equal(initialStats.total_imported_records, 0, 'a new workspace must start with zero uploaded reviews');
+  assert.equal(initialStats.valid_unique_reviews, 0);
+  assert.equal(initialStats.issues_detected_count, 0, 'a new workspace must start with zero issue groups');
+  const initialProducts = await request('/api/products', firstCookie).then((response) => response.json()) as { products: unknown[] };
+  assert.equal(initialProducts.products.length, 0, 'a new workspace must start with zero product insights');
+  assert.equal((await request('/api/reviews', firstCookie).then((response) => response.json()) as { reviews: unknown[] }).reviews.length, 0);
+
+  const implicitBenchmark = await request('/api/evaluation/benchmark', firstCookie);
+  assert.equal(implicitBenchmark.status, 400, 'benchmark results require explicit fixture selection');
+  const explicitBenchmark = await request('/api/evaluation/benchmark?dataset=c01_official&mode=c01_official', firstCookie);
+  assert.equal(explicitBenchmark.status, 200);
+  const benchmarkResult = await explicitBenchmark.json() as { dataset: { id: string; analysis_method: string }; evaluation: { total_samples: number } };
+  assert.equal(benchmarkResult.dataset.id, 'c01_official');
+  assert.equal(benchmarkResult.dataset.analysis_method, 'deterministic_rules');
+  assert.equal(benchmarkResult.evaluation.total_samples, 20);
+  const disabledFixtureImport = await request('/api/dataset/load-c01', firstCookie, { method: 'POST', body: JSON.stringify({}) });
+  assert.equal(disabledFixtureImport.status, 410, 'the benchmark fixture must not be imported as customer reviews');
+  const stillEmpty = await request('/api/stats', firstCookie).then((response) => response.json()) as { total_imported_records: number };
+  assert.equal(stillEmpty.total_imported_records, 0, 'benchmark evaluation must not mutate workspace data');
+
   const c01Response = await request('/api/reviews/import', firstCookie, {
     method: 'POST', body: JSON.stringify({ filename: 'C01-fixture.json', records: fixture, auto_analyze: true })
   });
@@ -186,6 +209,42 @@ try {
   const secondWorkspaceReviews = (await isolatedReviews.json() as { reviews: any[] }).reviews;
   assert.equal(secondWorkspaceReviews.length, 0, 'a second merchant must not see the first merchant reviews');
 
+  const fiveReviewImport = await request('/api/reviews/import', secondCookie, {
+    method: 'POST',
+    body: JSON.stringify({ filename: 'five-real-reviews.json', auto_analyze: true, records: [
+      { review_id: 'FIVE-01', product_id: 'INVALID', review_text: 'invalid row must not reserve this ID', rating: 0 },
+      { review_id: 'FIVE-01', product_id: 'UNKNOWN-SKU', review_text: 'The blender pitcher arrived cracked and the motor stopped working after two days.', rating: 1 },
+      { review_id: 'FIVE-02', product_id: 'UNKNOWN-SKU', review_text: 'My refund has still not been processed.', rating: 1 },
+      { review_id: 'FIVE-03', product_id: 'UNKNOWN-SKU', review_text: 'The delivery was three days late.', rating: 2 },
+      { review_id: 'FIVE-04', product_id: 'UNKNOWN-SKU', review_text: 'The package was crushed and torn.', rating: 1 },
+      { review_id: 'FIVE-05', product_id: 'UNKNOWN-SKU', review_text: 'Customer support never replied to my emails.', rating: 1 },
+      { review_id: 'FIVE-05', product_id: 'UNKNOWN-SKU', review_text: 'A distinct second record with a duplicate ID.', rating: 4 }
+    ] })
+  });
+  assert.equal(fiveReviewImport.status, 200);
+  const fiveResult = await fiveReviewImport.json() as { added: number; total_in_db: number; errors: { row: number; field: string }[] };
+  assert.equal(fiveResult.added, 5, 'exactly five valid unique rows should be accepted');
+  assert.equal(fiveResult.total_in_db, 5);
+  assert.equal(fiveResult.errors.length, 2, 'invalid and duplicate rows should both be reported');
+  assert.ok(fiveResult.errors.some((error) => error.field === 'rating'));
+  assert.ok(fiveResult.errors.some((error) => error.field === 'review_id'));
+
+  const secondReviews = await request('/api/reviews?include_duplicates=true', secondCookie).then((response) => response.json()) as { reviews: any[] };
+  assert.equal(secondReviews.reviews.length, 5);
+  assert.equal(secondReviews.reviews.find((review) => review.review_id === 'FIVE-01')?.analysis_method, 'deterministic_rules');
+  const multiIssue = secondReviews.reviews.find((review) => review.review_id === 'FIVE-01');
+  assert.ok(multiIssue?.issues.some((issue: { category: string }) => issue.category === 'product_damage'));
+  assert.ok(multiIssue?.issues.some((issue: { category: string }) => issue.category === 'functional_failures'));
+  assert.ok(secondReviews.reviews.some((review) => review.review_id === 'FIVE-02' && review.issues.some((issue: { category: string }) => issue.category === 'other')));
+  assert.ok(secondReviews.reviews.some((review) => review.review_id === 'FIVE-04' && review.issues.some((issue: { category: string }) => issue.category === 'packaging_problems')));
+  const secondIssues = await request('/api/issues', secondCookie).then((response) => response.json()) as { issues: { category: string; unique_review_count: number }[] };
+  assert.ok(secondIssues.issues.some((issue) => issue.category === 'product_damage' && issue.unique_review_count === 1));
+  assert.ok(secondIssues.issues.some((issue) => issue.category === 'functional_failures' && issue.unique_review_count === 1));
+  const secondProducts = await request('/api/products', secondCookie).then((response) => response.json()) as { products: { product_id: string; total_unique_reviews: number }[] };
+  assert.ok(secondProducts.products.some((product) => product.product_id === 'UNKNOWN-SKU' && product.total_unique_reviews === 5));
+  assert.equal((await request('/api/reviews', firstCookie).then((response) => response.json()) as { reviews: any[] }).reviews.some((review) => review.review_id === 'FIVE-01'), false,
+    'the first merchant must not see the second merchant upload');
+
   await stopServer();
   const persistedBeforeRestart = fs.readFileSync(databasePath, 'utf8');
   JSON.parse(persistedBeforeRestart);
@@ -195,6 +254,10 @@ try {
   assert.equal(afterRestart.status, 200, 'the persisted session and reviews should survive restart');
   const restartedReviews = (await afterRestart.json() as { reviews: any[] }).reviews;
   assert.ok(restartedReviews.some((review) => review.review_id === 'UPLOAD-REFUND-001'));
+  const secondAfterRestart = await request('/api/reviews?include_duplicates=true', secondCookie);
+  assert.equal(secondAfterRestart.status, 200);
+  const persistedSecondReviews = await secondAfterRestart.json() as { reviews: any[] };
+  assert.equal(persistedSecondReviews.reviews.length, 5, 'the second workspace upload must survive restart');
   const persistedAfterRestart = fs.readFileSync(databasePath, 'utf8');
   JSON.parse(persistedAfterRestart);
   assert.equal(crypto.createHash('sha256').update(persistedAfterRestart).digest('hex'), hashBeforeRestart,
@@ -203,7 +266,7 @@ try {
   const logout = await request('/api/auth/logout', firstCookie, { method: 'POST', body: JSON.stringify({}) });
   assert.equal(logout.status, 200);
   assert.equal((await request('/api/stats', firstCookie)).status, 401, 'logout must invalidate the session');
-  console.log('Isolated API workflow passed: auth, C01 import, validation, trusted analysis, issue/product aggregation, workspace isolation, persistence/restart, and logout.');
+  console.log('Isolated API workflow passed: empty workspaces, opt-in fixture benchmark, real five-review import, validation, trusted multi-issue analysis, issue/product aggregation, workspace isolation, persistence/restart, and logout.');
 } finally {
   await stopServer();
   fs.rmSync(dataDir, { recursive: true, force: true });

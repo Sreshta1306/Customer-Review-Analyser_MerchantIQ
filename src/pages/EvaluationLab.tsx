@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { api } from '../api/client';
-import { EvaluationSummary, EvaluationRecord } from '../types';
+import { EvaluationSummary } from '../types';
 import { LoadingSkeleton, EmptyState } from '../components/common/EmptyState';
 import {
   FlaskConical,
@@ -17,35 +17,23 @@ import {
 
 export const EvaluationLab: React.FC = () => {
   const [evaluation, setEvaluation] = useState<EvaluationSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [filterDisagreementsOnly, setFilterDisagreementsOnly] = useState(false);
-
-  useEffect(() => {
-    loadEvaluation();
-  }, []);
-
-  const loadEvaluation = async () => {
-    try {
-      setLoading(true);
-      const res = await api.getEvaluationBenchmark('c01_official');
-      setEvaluation(res.evaluation);
-    } catch (err) {
-      console.error('Failed to load evaluation benchmark:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleRunBenchmark = async () => {
     try {
       setRunning(true);
+      setLoading(true);
+      setErrorMessage(null);
       const res = await api.getEvaluationBenchmark('c01_official');
       setEvaluation(res.evaluation);
     } catch (err) {
-      alert('Failed to run benchmark');
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to run the official benchmark.');
     } finally {
       setRunning(false);
+      setLoading(false);
     }
   };
 
@@ -61,8 +49,29 @@ export const EvaluationLab: React.FC = () => {
     a.click();
   };
 
-  if (loading || !evaluation) {
+  if (loading) {
     return <LoadingSkeleton rows={8} />;
+  }
+
+  if (!evaluation) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white p-5 rounded-xl border border-slate-200">
+          <h1 className="text-lg font-bold text-slate-900 tracking-tight">Evaluation Lab</h1>
+          <p className="text-xs text-slate-500 mt-1">Benchmark results are separate from customer reviews uploaded to your workspace.</p>
+        </div>
+        {errorMessage && (
+          <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{errorMessage}</div>
+        )}
+        <EmptyState
+          icon={FlaskConical}
+          title="No benchmark selected"
+          description="Run the official 20-review C01 judge fixture to see benchmark-only precision, recall, and F1. It uses the deterministic classifier, does not read workspace reviews, and does not add fixture rows to your data."
+          actionLabel={running ? 'Evaluating...' : 'Run official C01 benchmark'}
+          onAction={handleRunBenchmark}
+        />
+      </div>
+    );
   }
 
   const targetMet = evaluation.recovered_label_count >= evaluation.target_recovery_threshold;
@@ -104,6 +113,11 @@ export const EvaluationLab: React.FC = () => {
             <span>{running ? 'Evaluating...' : 'Re-run Benchmark'}</span>
           </button>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 text-xs text-indigo-950">
+        <strong>Separate benchmark fixture:</strong> Official C01 judge-labelled reviews from Starter_Data/C01/fixture.json.
+        Predictions were generated from fixture text using deterministic_rules. This benchmark is not customer data and does not use Gemini.
       </div>
 
       {/* Primary Case Outcome Check Card */}

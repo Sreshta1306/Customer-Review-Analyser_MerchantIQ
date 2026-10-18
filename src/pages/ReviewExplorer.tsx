@@ -284,10 +284,16 @@ R103,PROD-UNKNOWN,Unknown Item,2,"Fabric was totally see through and sizing ran 
         ) : filteredReviews.length === 0 ? (
           <EmptyState
             icon={Search}
-            title="No matching reviews found"
-            description="Try clearing your search query or filters to inspect all ingested reviews."
-            actionLabel="Reset Filters"
+            title={reviews.length === 0 ? 'No reviews uploaded yet' : 'No matching reviews found'}
+            description={reviews.length === 0
+              ? 'Upload a JSON or CSV customer-review dataset to begin analysis. No sample reviews have been added to this workspace.'
+              : 'Try clearing your search query or filters to inspect all ingested reviews.'}
+            actionLabel={reviews.length === 0 ? 'Import review dataset' : 'Reset Filters'}
             onAction={() => {
+              if (reviews.length === 0) {
+                setIsImportModalOpen(true);
+                return;
+              }
               setSearchTerm('');
               setSelectedCategory('all');
               setSelectedSeverity('all');

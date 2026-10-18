@@ -132,35 +132,6 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
         </div>
       </div>
 
-      {/* Case C01 Public Checks & Reconciled Verification Card */}
-      <div className="bg-gradient-to-r from-indigo-50/80 via-white to-slate-50 p-4 rounded-xl border border-indigo-100 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">
-        <div className="flex items-start gap-3">
-          <div className="p-2 bg-indigo-600 text-white rounded-lg shrink-0">
-            <ShieldAlert className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-900">Case C01: Review to Action Merchant Copilot</span>
-              <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-800 rounded-full">
-                Active Benchmark Fixture
-              </span>
-            </div>
-            <p className="text-slate-600 mt-1">
-              Dataset: <code>Starter_Data/C01/fixture.json</code> &bull; Currency: <strong>INR (₹)</strong> &bull; Reconciled: <strong>{stats.valid_unique_reviews} unique reviews</strong> ({confirmedDuplicateLabel}; {suspectedDuplicateLabel}).
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <button
-            onClick={() => onNavigate('evaluation')}
-            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
-          >
-            <span>Evaluation Lab</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
-
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
@@ -231,6 +202,14 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
           <div className="text-[11px] text-slate-400 mt-0.5">Awaiting review</div>
         </div>
       </div>
+
+      {stats.total_imported_records === 0 && (
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-5">
+          <h2 className="text-sm font-semibold text-slate-900">Your workspace is ready for review data</h2>
+          <p className="mt-1 text-xs text-slate-600">No customer reviews have been uploaded to this workspace yet. Import a JSON or CSV dataset to generate review, issue, and product insights.</p>
+          <button onClick={() => onNavigate('explorer')} className="mt-3 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-700">Import review dataset</button>
+        </div>
+      )}
 
       {/* Top 3 Issues Requiring Investigation (Mandatory Hackathon Deliverable) */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
@@ -325,6 +304,9 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
               </div>
             </div>
           ))}
+          {(stats.top_issues || []).length === 0 && (
+            <p className="p-5 text-xs text-slate-500">No issue groups yet. Upload and analyze review data to see evidence-backed issues here.</p>
+          )}
         </div>
       </div>
 
@@ -408,26 +390,22 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
         </div>
       </div>
 
-      {/* Edge Case Warning & Verification Bar */}
-      <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-        <div className="flex items-start gap-2.5">
-          <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-bold text-amber-900 block">
-              Deduplication & Safety Invariants Verified
-            </span>
-            <p className="text-amber-800">
-              {confirmedDuplicateLabel}; {suspectedDuplicateLabel}; 1 critical electrical hazard escalated (R003 cord sparks); 1 adversarial injection neutralized (R006).
-            </p>
+      {stats.total_imported_records > 0 && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4 text-xs">
+          <div className="flex items-start gap-2.5">
+            <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-slate-500" />
+            <div>
+              <span className="block font-bold text-slate-800">Workspace duplicate review</span>
+              <p className="text-slate-600">
+                {confirmedDuplicateLabel}; {suspectedDuplicateLabel}. Confirmed duplicates are excluded from unique-review totals; suspected candidates remain included until resolved.
+              </p>
+            </div>
           </div>
+          {(stats.confirmed_duplicates > 0 || stats.suspected_duplicates > 0) && (
+            <button onClick={() => onNavigate('explorer')} className="shrink-0 rounded-lg bg-slate-100 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-200">Review duplicates</button>
+          )}
         </div>
-        <button
-          onClick={() => onNavigate('explorer')}
-          className="px-3 py-1.5 font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-lg transition-colors whitespace-nowrap shrink-0"
-        >
-          Review Flags
-        </button>
-      </div>
+      )}
 
       {/* Recent Reviews Feed */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
@@ -492,6 +470,9 @@ export const OverviewDashboard: React.FC<OverviewDashboardProps> = ({
                   </td>
                 </tr>
               ))}
+              {recentReviews.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-xs text-slate-500">No reviews uploaded yet. Import a JSON or CSV dataset to see analyzed customer feedback.</td></tr>
+              )}
             </tbody>
           </table>
         </div>

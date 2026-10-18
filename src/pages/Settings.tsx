@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../api/client';
 import { AppSettings, AuditLogEntry } from '../types';
-import { ConfirmDialog } from '../components/common/ConfirmDialog';
 import { LoadingSkeleton } from '../components/common/EmptyState';
 import {
   Settings as SettingsIcon,
   Save,
-  RotateCcw,
   Sliders,
   Cpu,
   History,
@@ -20,7 +18,6 @@ export const Settings: React.FC = () => {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   useEffect(() => {
@@ -56,16 +53,6 @@ export const Settings: React.FC = () => {
     }
   };
 
-  const handleResetDemoData = async () => {
-    try {
-      await api.resetDemo();
-      loadSettings();
-      alert('Demo data successfully reset to the official 20-review judge dataset.');
-    } catch (err) {
-      alert('Failed to reset demo data');
-    }
-  };
-
   if (loading || !settings) {
     return <LoadingSkeleton rows={6} />;
   }
@@ -89,13 +76,6 @@ export const Settings: React.FC = () => {
               Settings Saved!
             </span>
           )}
-          <button
-            onClick={() => setIsResetConfirmOpen(true)}
-            className="px-3 py-1.5 text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 hover:bg-rose-100 rounded-lg transition-colors flex items-center gap-1.5"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Demo Data</span>
-          </button>
           <button
             onClick={handleSaveSettings}
             disabled={saving}
@@ -326,16 +306,6 @@ export const Settings: React.FC = () => {
         </div>
       </div>
 
-      {/* Confirmation Dialog for Reset */}
-      <ConfirmDialog
-        isOpen={isResetConfirmOpen}
-        onClose={() => setIsResetConfirmOpen(false)}
-        onConfirm={handleResetDemoData}
-        title="Reset Demo Dataset?"
-        message="This will reload the official 20-review judge fixture dataset, initial corrective actions, and decision histories. Any unsaved custom imports will be restored to starter state."
-        confirmLabel="Reset to Demo State"
-        isDestructive={true}
-      />
     </div>
   );
 };
