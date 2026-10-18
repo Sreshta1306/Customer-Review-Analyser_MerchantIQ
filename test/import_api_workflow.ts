@@ -31,7 +31,9 @@ async function startServer(): Promise<void> {
       MERCHANTIQ_DATA_DIR: dataDir,
       PORT: String(port),
       NODE_ENV: 'production',
-      COOKIE_SECURE: 'false',
+      COOKIE_SECURE: 'true',
+      COOKIE_SAME_SITE: 'none',
+      FRONTEND_ORIGINS: 'https://merchantiq-web.example.test',
       GEMINI_API_KEY: '',
       GOOGLE_CLIENT_ID: ''
     },
@@ -66,10 +68,12 @@ function endpoint(route: string): string {
   return `http://127.0.0.1:${port}${route}`;
 }
 
-async function register(email: string): Promise<{ email: string; user: { workspace_id: string } }> {
+async function register(email: string, origin?: string): Promise<{ email: string; user: { workspace_id: string } }> {
+  const headers = new Headers({ 'content-type': 'application/json' });
+  if (origin) headers.set('origin', origin);
   const response = await fetch(endpoint('/api/auth/register'), {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers,
     body: JSON.stringify({ name: 'API Test User', email, store_name: 'Test Store', password: 'StrongPass123' })
   });
   assert.equal(response.status, 201);
@@ -78,15 +82,19 @@ async function register(email: string): Promise<{ email: string; user: { workspa
   return { email, user: body.user };
 }
 
-async function login(email: string): Promise<string> {
+async function login(email: string, origin?: string): Promise<string> {
+  const headers = new Headers({ 'content-type': 'application/json' });
+  if (origin) headers.set('origin', origin);
   const response = await fetch(endpoint('/api/auth/login'), {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST', headers,
     body: JSON.stringify({ email, password: 'StrongPass123' })
   });
   assert.equal(response.status, 200, 'valid credentials must be accepted');
   const cookieHeader = response.headers.get('set-cookie') || '';
   assert.match(cookieHeader, /HttpOnly/i);
   assert.match(cookieHeader, /Max-Age=604800/);
+  assert.match(cookieHeader, /SameSite=none/i, 'cross-origin deployment must opt in to cross-site session cookies');
+  assert.match(cookieHeader, /; Secure/i, 'cross-site session cookies must be Secure');
   return cookieHeader.split(';')[0];
 }
 
@@ -99,13 +107,32 @@ async function request(route: string, cookie: string, init: RequestInit = {}): P
 
 try {
   await startServer();
+  const frontendOrigin = 'https://merchantiq-web.example.test';
+  const preflight = await fetch(endpoint('/api/auth/login'), {
+    method: 'OPTIONS',
+    headers: {
+      origin: frontendOrigin,
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type'
+    }
+  });
+  assert.equal(preflight.status, 204, 'allowed frontend CORS preflight must succeed');
+  assert.equal(preflight.headers.get('access-control-allow-origin'), frontendOrigin);
+  assert.equal(preflight.headers.get('access-control-allow-credentials'), 'true');
+  const rejectedOrigin = await fetch(endpoint('/api/auth/login'), {
+    method: 'POST',
+    headers: { origin: 'https://untrusted.example.test', 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'not-used@example.test', password: 'not-used' })
+  });
+  assert.equal(rejectedOrigin.status, 403, 'unlisted browser origins must be rejected');
+
   const healthResponse = await fetch(endpoint('/api/health'));
   const health = await healthResponse.json() as { status: string; ai_available: boolean };
   assert.equal(health.status, 'ok');
   assert.equal(health.ai_available, false, 'this isolated workflow must run with Gemini disabled');
   assert.equal((await fetch(endpoint('/api/stats'))).status, 401, 'protected endpoints must reject anonymous requests');
 
-  const first = await register('first@example.test');
+  const first = await register('first@example.test', frontendOrigin);
   assert.equal((await fetch(endpoint('/api/auth/me')).then((response) => response.status)), 401,
     'a newly registered user must remain signed out');
   assert.equal((await fetch(endpoint('/api/stats')).then((response) => response.status)), 401,
@@ -115,7 +142,7 @@ try {
     body: JSON.stringify({ email: 'first@example.test', password: 'wrong-password' })
   });
   assert.equal(badLogin.status, 401, 'invalid passwords must be rejected');
-  const firstCookie = await login('first@example.test');
+  const firstCookie = await login('first@example.test', frontendOrigin);
 
   const emptyStats = await request('/api/stats', firstCookie);
   assert.equal(emptyStats.status, 200);

@@ -1,3 +1,9 @@
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+
+function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  return globalThis.fetch(API_BASE_URL + input, { ...init, credentials: 'include' });
+}
+
 import {
   Review,
   IssueSummary,
@@ -19,7 +25,7 @@ export const auth = {
   },
   async getMe(): Promise<{ authenticated: boolean; user?: UserAccount }> {
     try {
-      const res = await fetch('/api/auth/me', { credentials: 'include' });
+      const res = await apiFetch('/api/auth/me', { credentials: 'include' });
       if (!res.ok) return { authenticated: false };
       return res.json();
     } catch {
@@ -27,7 +33,7 @@ export const auth = {
     }
   },
   async login(payload: { email: string; password: string }): Promise<{ success: boolean; user: UserAccount }> {
-    const res = await fetch('/api/auth/login', {
+    const res = await apiFetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -38,7 +44,7 @@ export const auth = {
     return data;
   },
   async register(payload: { name: string; email: string; store_name: string; password: string }): Promise<{ success: boolean; user: UserAccount }> {
-    const res = await fetch('/api/auth/register', {
+    const res = await apiFetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -50,13 +56,13 @@ export const auth = {
   },
   async logout(): Promise<void> {
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
     } catch {
       // The server session remains authoritative if the network is unavailable.
     }
   },
   async getAuthConfig(): Promise<{ google_configured: boolean; google_client_id: string | null }> {
-    const res = await fetch('/api/auth/config');
+    const res = await apiFetch('/api/auth/config');
     return res.json();
   }
 };
@@ -75,7 +81,7 @@ export interface DashboardStats {
 export const api = {
   // Stats
   async getStats(): Promise<DashboardStats> {
-    const res = await fetch('/api/stats');
+    const res = await apiFetch('/api/stats');
     if (!res.ok) throw new Error('Failed to fetch dashboard stats');
     return res.json();
   },
@@ -97,13 +103,13 @@ export const api = {
     if (params?.needs_review) query.set('needs_review', 'true');
     if (params?.include_duplicates) query.set('include_duplicates', 'true');
 
-    const res = await fetch(`/api/reviews?${query.toString()}`);
+    const res = await apiFetch(`/api/reviews?${query.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch reviews');
     return res.json();
   },
 
   async getReview(id: string): Promise<{ review: Review }> {
-    const res = await fetch(`/api/reviews/${id}`);
+    const res = await apiFetch(`/api/reviews/${id}`);
     if (!res.ok) throw new Error('Failed to fetch review');
     return res.json();
   },
@@ -113,7 +119,7 @@ export const api = {
     issues: Review['issues'],
     notes?: string
   ): Promise<{ review: Review }> {
-    const res = await fetch(`/api/reviews/${id}`, {
+    const res = await apiFetch(`/api/reviews/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ issues, notes })
@@ -127,7 +133,7 @@ export const api = {
     records: any[];
     auto_analyze?: boolean;
   }): Promise<any> {
-    const res = await fetch('/api/reviews/import', {
+    const res = await apiFetch('/api/reviews/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -146,7 +152,7 @@ export const api = {
     reviewId: string,
     markAsDuplicate: boolean
   ): Promise<{ review: Review }> {
-    const res = await fetch('/api/reviews/resolve-duplicate', {
+    const res = await apiFetch('/api/reviews/resolve-duplicate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ review_id: reviewId, mark_as_duplicate: markAsDuplicate })
@@ -161,7 +167,7 @@ export const api = {
     force_reanalyze?: boolean;
     method?: 'gemini_ai' | 'deterministic_rules';
   }): Promise<{ success: boolean; analyzed_count: number; reviews: Review[] }> {
-    const res = await fetch('/api/analyze', {
+    const res = await apiFetch('/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params || {})
@@ -175,27 +181,27 @@ export const api = {
 
   // Issues
   async getIssues(): Promise<{ issues: IssueSummary[]; total: number; top_three: IssueSummary[] }> {
-    const res = await fetch('/api/issues');
+    const res = await apiFetch('/api/issues');
     if (!res.ok) throw new Error('Failed to fetch issues');
     return res.json();
   },
 
   // Products
   async getProducts(): Promise<{ products: any[]; total: number }> {
-    const res = await fetch('/api/products');
+    const res = await apiFetch('/api/products');
     if (!res.ok) throw new Error('Failed to fetch products');
     return res.json();
   },
 
   // Actions
   async getActions(): Promise<{ actions: CorrectiveAction[] }> {
-    const res = await fetch('/api/actions');
+    const res = await apiFetch('/api/actions');
     if (!res.ok) throw new Error('Failed to fetch actions');
     return res.json();
   },
 
   async createAction(action: Partial<CorrectiveAction>): Promise<{ action: CorrectiveAction }> {
-    const res = await fetch('/api/actions', {
+    const res = await apiFetch('/api/actions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(action)
@@ -208,7 +214,7 @@ export const api = {
     id: string,
     updates: Partial<CorrectiveAction>
   ): Promise<{ action: CorrectiveAction }> {
-    const res = await fetch(`/api/actions/${id}`, {
+    const res = await apiFetch(`/api/actions/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
@@ -219,13 +225,13 @@ export const api = {
 
   // Decisions
   async getDecisions(): Promise<{ decisions: DecisionVersion[] }> {
-    const res = await fetch('/api/decisions');
+    const res = await apiFetch('/api/decisions');
     if (!res.ok) throw new Error('Failed to fetch decisions');
     return res.json();
   },
 
   async saveDecision(decision: Partial<DecisionVersion>): Promise<{ decision: DecisionVersion }> {
-    const res = await fetch('/api/decisions', {
+    const res = await apiFetch('/api/decisions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(decision)
@@ -236,7 +242,7 @@ export const api = {
 
   // Audit Logs
   async getAuditLogs(): Promise<{ logs: AuditLogEntry[] }> {
-    const res = await fetch('/api/audit-log');
+    const res = await apiFetch('/api/audit-log');
     if (!res.ok) throw new Error('Failed to fetch audit logs');
     return res.json();
   },
@@ -252,7 +258,7 @@ export const api = {
     confirmed_duplicates: number;
     job: any;
   }> {
-    const res = await fetch('/api/dataset/load-c01', {
+    const res = await apiFetch('/api/dataset/load-c01', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -261,7 +267,7 @@ export const api = {
   },
 
   async getC01Fixture(): Promise<{ fixture: any }> {
-    const res = await fetch('/api/dataset/c01-fixture');
+    const res = await apiFetch('/api/dataset/c01-fixture');
     if (!res.ok) throw new Error('Failed to fetch C01 fixture');
     return res.json();
   },
@@ -270,7 +276,7 @@ export const api = {
   async getEvaluationBenchmark(
     mode: 'c01_official' | 'granular_taxonomy' = 'c01_official'
   ): Promise<{ evaluation: EvaluationSummary }> {
-    const res = await fetch(`/api/evaluation/benchmark?dataset=c01_official&mode=${mode}`);
+    const res = await apiFetch(`/api/evaluation/benchmark?dataset=c01_official&mode=${mode}`);
     if (!res.ok) throw new Error('Failed to fetch evaluation benchmark');
     return res.json();
   },
@@ -280,7 +286,7 @@ export const api = {
     assumptions: BusinessPlanAssumptions;
     action_cost_table: ActionCostAssumption[];
   }> {
-    const res = await fetch('/api/business-planner');
+    const res = await apiFetch('/api/business-planner');
     if (!res.ok) throw new Error('Failed to fetch business assumptions');
     return res.json();
   },
@@ -288,7 +294,7 @@ export const api = {
   async saveBusinessAssumptions(
     assumptions: Partial<BusinessPlanAssumptions>
   ): Promise<{ assumptions: BusinessPlanAssumptions }> {
-    const res = await fetch('/api/business-planner', {
+    const res = await apiFetch('/api/business-planner', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(assumptions)
@@ -299,13 +305,13 @@ export const api = {
 
   // Interviews
   async getInterviews(): Promise<{ interviews: CustomerInterview[] }> {
-    const res = await fetch('/api/interviews');
+    const res = await apiFetch('/api/interviews');
     if (!res.ok) throw new Error('Failed to fetch customer interviews');
     return res.json();
   },
 
   async saveInterview(interview: Partial<CustomerInterview>): Promise<{ interview: CustomerInterview }> {
-    const res = await fetch('/api/interviews', {
+    const res = await apiFetch('/api/interviews', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(interview)
@@ -316,13 +322,13 @@ export const api = {
 
   // Pilots
   async getPilots(): Promise<{ pilots: PilotExperiment[] }> {
-    const res = await fetch('/api/pilots');
+    const res = await apiFetch('/api/pilots');
     if (!res.ok) throw new Error('Failed to fetch pilot experiments');
     return res.json();
   },
 
   async savePilot(pilot: Partial<PilotExperiment>): Promise<{ pilot: PilotExperiment }> {
-    const res = await fetch('/api/pilots', {
+    const res = await apiFetch('/api/pilots', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(pilot)
@@ -333,13 +339,13 @@ export const api = {
 
   // Settings
   async getSettings(): Promise<{ settings: AppSettings }> {
-    const res = await fetch('/api/settings');
+    const res = await apiFetch('/api/settings');
     if (!res.ok) throw new Error('Failed to fetch settings');
     return res.json();
   },
 
   async updateSettings(settings: Partial<AppSettings>): Promise<{ settings: AppSettings }> {
-    const res = await fetch('/api/settings', {
+    const res = await apiFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings)
@@ -350,7 +356,7 @@ export const api = {
 
   // Reset demo
   async resetDemo(): Promise<any> {
-    const res = await fetch('/api/reset-demo', { method: 'POST' });
+    const res = await apiFetch('/api/reset-demo', { method: 'POST' });
     if (!res.ok) throw new Error('Failed to reset demo dataset');
     return res.json();
   }

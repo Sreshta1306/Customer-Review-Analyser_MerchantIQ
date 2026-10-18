@@ -203,3 +203,16 @@ Password recovery email delivery and Google OAuth are intentionally unavailable 
 - The existing Express server continues to serve `dist/index.html` for the SPA and all existing API routes.
 - Before ownership migration, create a copy of `data\merchant_intelligence_db.json`. The migration adds workspace IDs to users and preserves ownerless records unchanged apart from the additive schema metadata.
 - If Gemini responds with a provider rate-limit/quota response (`HTTP 429`), the review is explicitly labeled `deterministic_rules`; this is not reported as a successful Gemini analysis.
+
+
+## Split deployment: Render API and Vercel frontend
+
+The Dockerfile builds the Vite app and runs Express. For a split deployment, use the root render.yaml for the Docker API service and deploy this repository as a Vercel Vite project with root directory ., build command npm run build, and output directory dist. vercel.json provides the SPA fallback.
+
+Render's plan 0.5c-512mb and 1 GB disk are intentional: Render persistent disks are available only on paid web-service plans. Check the current price in Render before creating the service. The disk mounts at /var/data; MERCHANTIQ_DATA_DIR=/var/data makes the app store /var/data/merchant_intelligence_db.json. A new production disk starts empty; the local JSON database is never copied automatically. A disk-backed Render service runs one instance and does not use zero-downtime deploys.
+
+After the Vercel project is created, set its VITE_API_BASE_URL to the Render service origin only, for example https://your-service.onrender.com (do not append /api). Then set Render FRONTEND_ORIGINS to the exact Vercel production origin, for example https://your-project.vercel.app. Add any custom domain origins as comma-separated exact origins. These values must be updated to the actual dashboard URLs before cross-origin login works.
+
+The backend uses credentialed CORS and host-only HttpOnly session cookies. For the separate HTTPS Vercel and Render origins, Render sets COOKIE_SAME_SITE=none and COOKIE_SECURE=true. Browsers can restrict third-party cookies even with these attributes. A custom frontend and API domain under the same registrable domain is the more reliable production cookie arrangement.
+
+Configure GEMINI_API_KEY only in Render's service environment; it is optional and deterministic rules remain the fallback. Never add it as a Vercel variable. GOOGLE_CLIENT_ID is also optional. Enter secrets only in the Render Dashboard; they are not stored in Git. For local development, leave VITE_API_BASE_URL blank; the existing same-origin dev server continues to work.

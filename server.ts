@@ -20,7 +20,55 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 
+function getAllowedOrigins(): string[] {
+  const configured = (process.env.FRONTEND_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+  if (process.env.NODE_ENV !== 'production') {
+    configured.push('http://localhost:5173', 'http://127.0.0.1:5173');
+  }
+  return configured;
+}
+
+function isSameOrigin(req: Request): boolean {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  const forwardedProtocol = req.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  const requestOrigin = (forwardedProtocol || req.protocol) + '://' + req.get('host');
+  return origin === requestOrigin || getAllowedOrigins().includes(origin);
+}
+
+app.use('/api', (req: Request, res: Response, next) => {
+  const origin = req.headers.origin;
+  if (origin && !isSameOrigin(req)) {
+    return res.status(403).json({ error: 'Request origin is not allowed.' });
+  }
+  if (origin) {
+    res.vary('Origin');
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '600');
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 app.use(express.json({ limit: '15mb' }));
+
+function sendApiError(req: Request, res: Response, error: unknown) {
+  const routeLabel = typeof req.route?.path === 'string' ? req.route.path : 'unmatched route';
+  const errorType = error instanceof Error ? error.name : 'UnknownError';
+  console.error('[MerchantIQ] ' + req.method + ' ' + routeLabel + ' failed (' + errorType + ').');
+  const message = process.env.NODE_ENV === 'production'
+    ? 'Internal server error.'
+    : error instanceof Error ? error.message : 'Unexpected server error.';
+  return res.status(500).json({ error: message });
+}
 
 // Utility for formula injection prevention in CSV exports
 function sanitizeForCsv(val: any): string {
@@ -64,13 +112,28 @@ function getCookie(req: Request, name: string): string | null {
   return entry ? decodeURIComponent(entry.slice(name.length + 1)) : null;
 }
 
+function getSessionCookieAttributes(): { sameSite: string; secure: boolean } {
+  const configuredSameSite = (process.env.COOKIE_SAME_SITE || 'lax').toLowerCase();
+  const sameSite = ['lax', 'strict', 'none'].includes(configuredSameSite) ? configuredSameSite : 'lax';
+  const secure = sameSite === 'none' ||
+    (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false') ||
+    process.env.COOKIE_SECURE === 'true';
+  return { sameSite, secure };
+}
+
 function setSessionCookie(res: Response, token: string): void {
-  const secure = process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false';
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(token)}; Max-Age=${SESSION_TTL_MS / 1000}; Path=/; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`);
+  const { sameSite, secure } = getSessionCookieAttributes();
+  const value = SESSION_COOKIE + '=' + encodeURIComponent(token);
+  const attributes = ['Max-Age=' + (SESSION_TTL_MS / 1000), 'Path=/', 'HttpOnly', 'SameSite=' + sameSite];
+  if (secure) attributes.push('Secure');
+  res.setHeader('Set-Cookie', [value, ...attributes].join('; '));
 }
 
 function clearSessionCookie(res: Response): void {
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax`);
+  const { sameSite, secure } = getSessionCookieAttributes();
+  const attributes = ['Max-Age=0', 'Path=/', 'HttpOnly', 'SameSite=' + sameSite];
+  if (secure) attributes.push('Secure');
+  res.setHeader('Set-Cookie', [SESSION_COOKIE + '=', ...attributes].join('; '));
 }
 
 function getUserFromReq(req: Request): UserRecord | null {
@@ -103,10 +166,6 @@ function issueSession(res: Response, userId: string): void {
   setSessionCookie(res, token);
 }
 
-function isSameOrigin(req: Request): boolean {
-  const origin = req.headers.origin;
-  return !origin || origin === `${req.protocol}://${req.get('host')}`;
-}
 
 app.get('/api/auth/config', (req: Request, res: Response) => {
   res.json({
@@ -182,7 +241,7 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
       }
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'Authentication service error.' });
+    sendApiError(req, res, err);
   }
 });
 
@@ -253,7 +312,7 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
       }
     });
   } catch (err: any) {
-    res.status(500).json({ error: 'Registration service error.' });
+    sendApiError(req, res, err);
   }
 });
 
@@ -345,7 +404,7 @@ app.get('/api/reviews', (req: Request, res: Response) => {
 
     res.json({ reviews, count: reviews.length });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -367,7 +426,7 @@ app.patch('/api/reviews/:id', (req: Request, res: Response) => {
     if (!updated) return res.status(404).json({ error: 'Review not found' });
     res.json({ review: updated });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -444,7 +503,7 @@ app.post('/api/reviews/import', async (req: Request, res: Response) => {
       errors
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -500,7 +559,7 @@ app.post('/api/analyze', async (req: Request, res: Response) => {
       reviews: analyzed
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -513,7 +572,7 @@ app.post('/api/reviews/resolve-duplicate', (req: Request, res: Response) => {
     if (!updated) return res.status(404).json({ error: 'Review not found' });
     res.json({ review: updated });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -539,7 +598,7 @@ app.get('/api/stats', (req: Request, res: Response) => {
       top_issues: issues.slice(0, 3)
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -549,7 +608,7 @@ app.get('/api/issues', (req: Request, res: Response) => {
     const issues = db.getIssuesSummary(getWorkspaceId(req));
     res.json({ issues, total: issues.length, top_three: issues.slice(0, 3) });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -559,7 +618,7 @@ app.get('/api/products', (req: Request, res: Response) => {
     const products = db.getProductsSummary(getWorkspaceId(req));
     res.json({ products, total: products.length });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -602,7 +661,7 @@ app.post('/api/actions', (req: Request, res: Response) => {
     const created = db.createAction(action, resLocalsUser(req).name, workspaceId);
     res.status(201).json({ action: created });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -613,7 +672,7 @@ app.patch('/api/actions/:id', (req: Request, res: Response) => {
     if (!updated) return res.status(404).json({ error: 'Action not found' });
     res.json({ action: updated });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -654,7 +713,7 @@ app.post('/api/decisions', (req: Request, res: Response) => {
     const saved = db.saveDecision(decision, resLocalsUser(req).name, getWorkspaceId(req));
     res.status(201).json({ decision: saved });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -679,7 +738,7 @@ app.get('/api/dataset/c01-fixture', (req: Request, res: Response) => {
     if (!fs.existsSync(fixturePath)) return res.status(404).json({ error: 'C01 fixture file not found' });
     res.json({ fixture: JSON.parse(fs.readFileSync(fixturePath, 'utf-8')) });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -729,7 +788,7 @@ app.get('/api/evaluation/benchmark', (req: Request, res: Response) => {
       evaluation
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -747,7 +806,7 @@ app.post('/api/business-planner', (req: Request, res: Response) => {
     const updated = db.updateBusinessAssumptions(req.body, getWorkspaceId(req));
     res.json({ assumptions: updated });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -761,7 +820,7 @@ app.post('/api/interviews', (req: Request, res: Response) => {
     const saved = db.saveInterview(req.body, getWorkspaceId(req));
     res.status(201).json({ interview: saved });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -775,7 +834,7 @@ app.post('/api/pilots', (req: Request, res: Response) => {
     const saved = db.savePilot(req.body, getWorkspaceId(req));
     res.status(201).json({ pilot: saved });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -790,7 +849,7 @@ app.post('/api/settings', (req: Request, res: Response) => {
     const updated = db.updateSettings(safeSettings, resLocalsUser(req).name, getWorkspaceId(req));
     res.json({ settings: updated });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -844,7 +903,7 @@ app.get('/api/export/csv', (req: Request, res: Response) => {
     );
     res.send(csvContent);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
@@ -872,7 +931,7 @@ app.get('/api/export/json', (req: Request, res: Response) => {
     );
     res.send(JSON.stringify(payload, null, 2));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    sendApiError(req, res, err);
   }
 });
 
