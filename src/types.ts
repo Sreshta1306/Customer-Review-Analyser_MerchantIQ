@@ -32,7 +32,7 @@ export interface Review {
   evaluation_expected_topics?: string[];
   sentiment?: 'positive' | 'neutral' | 'negative' | 'mixed';
   issues: IssueLabel[];
-  analysis_method?: 'gemini_ai' | 'deterministic_rules' | 'manual_override' | 'unprocessed';
+  analysis_method?: 'gemini_ai' | 'gemini_ai_enriched' | 'deterministic_rules' | 'manual_override' | 'unprocessed';
   analyzed_at?: string;
   needs_human_review?: boolean;
   duplicate_of?: string; // ID of original review if confirmed duplicate

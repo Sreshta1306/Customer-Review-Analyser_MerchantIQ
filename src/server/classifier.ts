@@ -454,6 +454,19 @@ function getGeminiStatus(error: unknown): string | null {
   return null;
 }
 
+export function getGeminiAnalysisMethod(
+  geminiIssues: IssueLabel[],
+  normalizedIssues: IssueLabel[]
+): 'gemini_ai' | 'gemini_ai_enriched' {
+  const geminiCategories = new Set(geminiIssues.map((issue) => issue.category));
+  const addedDeterministicFinding = normalizedIssues.some((issue) =>
+    issue.category !== 'uncertain' && !geminiCategories.has(issue.category)
+  );
+  const resolvedUncertainty = geminiIssues.some((issue) => issue.category === 'uncertain') &&
+    normalizedIssues.every((issue) => issue.category !== 'uncertain');
+  return addedDeterministicFinding || resolvedUncertainty ? 'gemini_ai_enriched' : 'gemini_ai';
+}
+
 /**
  * Classify a review using Gemini API with structured JSON output,
  * with graceful fallback to the deterministic multi-label rule engine.
@@ -465,7 +478,7 @@ export async function classifyReview(
   issues: IssueLabel[];
   sentiment: 'positive' | 'neutral' | 'negative' | 'mixed';
   needs_human_review: boolean;
-  method: 'gemini_ai' | 'deterministic_rules';
+  method: 'gemini_ai' | 'gemini_ai_enriched' | 'deterministic_rules';
 }> {
   // If AI is enabled and Gemini client is available
   if (useAi && geminiClient && process.env.GEMINI_API_KEY) {
@@ -601,14 +614,13 @@ Review Text: "${review.review_text.replace(/"/g, '\\"')}"`;
             review.rating,
             validIssues
           );
-
           return {
             issues: normalizedIssues,
             sentiment: parsed.sentiment || (review.rating >= 4 ? 'positive' : 'negative'),
             needs_human_review:
               Boolean(parsed.needs_human_review) ||
               normalizedIssues.some((issue) => issue.category === 'uncertain'),
-            method: 'gemini_ai'
+            method: getGeminiAnalysisMethod(validIssues, normalizedIssues)
           };
         }
       }

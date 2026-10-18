@@ -166,7 +166,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params || {})
     });
-    if (!res.ok) throw new Error('Failed to run review analysis');
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Failed to run review analysis');
+    }
     return res.json();
   },
 

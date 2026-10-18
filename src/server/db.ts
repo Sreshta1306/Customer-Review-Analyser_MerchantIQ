@@ -383,10 +383,18 @@ export class Store {
   }
 
   public saveReview(updated: Review, workspaceId?: string): Review {
-    if (workspaceId) updated.workspace_id = workspaceId;
-    const idx = this.data.reviews.findIndex(
-      (r) => r.review_id === updated.review_id && r.workspace_id === workspaceId
-    );
+    const ownerWorkspace = workspaceId ?? updated.workspace_id;
+    if (ownerWorkspace) updated.workspace_id = ownerWorkspace;
+    // getReviews returns references to the stored objects, so prefer exact
+    // identity. Review IDs can be shared by canonical and confirmed duplicate rows.
+    let idx = this.data.reviews.indexOf(updated);
+    if (idx < 0) {
+      idx = this.data.reviews.findIndex((r) =>
+        r.review_id === updated.review_id &&
+        r.workspace_id === ownerWorkspace &&
+        (r.duplicate_of ?? '') === (updated.duplicate_of ?? '')
+      );
+    }
     if (idx >= 0) {
       this.data.reviews[idx] = updated;
     } else {

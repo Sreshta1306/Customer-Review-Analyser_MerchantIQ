@@ -7,7 +7,7 @@ const tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'merchantiq-regression
 process.env.MERCHANTIQ_DATA_DIR = tempDataDir;
 
 try {
-  const [{ Store }, { normalizeImportPayload, parseCsv, parseImportText, validateReviewRecord }, { classifyWithRules, enrichIssuesWithDeterministicRules }] =
+  const [{ Store }, { normalizeImportPayload, parseCsv, parseImportText, validateReviewRecord }, { classifyWithRules, enrichIssuesWithDeterministicRules, getGeminiAnalysisMethod }] =
     await Promise.all([
       import('../src/server/db.ts'),
       import('../src/import/parsing.ts'),
@@ -261,6 +261,16 @@ try {
     ['delivery_related_issues', 'other'],
     'Gemini uncertain should be enriched with every supported deterministic issue'
   );
+  const uncertainGemini = [{
+    category: 'uncertain' as const, evidence: 'The item is good.', confidence: 0.4, severity: 'uncertain' as const
+  }];
+  const packagingEnrichment = enrichIssuesWithDeterministicRules(
+    'The item is good. The box arrived torn.', 4, uncertainGemini
+  );
+  assert.equal(getGeminiAnalysisMethod(uncertainGemini, packagingEnrichment), 'gemini_ai_enriched',
+    'Rule-enriched Gemini classifications must be labeled as mixed method');
+  assert.equal(getGeminiAnalysisMethod(packagingEnrichment, packagingEnrichment), 'gemini_ai',
+    'Gemini classifications with no rule additions must retain the Gemini label');
   assert.equal(
     classifyWithRules('This product is excellent and works perfectly.', 5).issues[0]?.category,
     'uncertain'
@@ -334,6 +344,28 @@ try {
   const persistedCountsAfterRepeat = workspaceStore.getUniqueReviewStats('WS-REGRESSION');
   assert.deepEqual(persistedCountsAfterRepeat, persistedCountsBeforeRepeat, 'Reanalysis must not alter raw, unique, or duplicate review counts');
   assert.equal(workspaceStore.getReviews('WS-REGRESSION').length, persistedCountsBeforeRepeat.total_imported_records, 'Repeated analysis must preserve all raw review records');
+
+  // A canonical review and confirmed duplicate can share the same ID. Saving
+  // the canonical record must update that object and leave its duplicate intact.
+  const sameIdStore = new Store(false);
+  const sharedReview: import('../src/types').Review = {
+    review_id: 'SHARED-ID', workspace_id: 'WS-SHARED', product_id: 'P1',
+    review_text: 'The box arrived torn.', rating: 2, created_at: new Date().toISOString(),
+    issues: [], analysis_method: 'unprocessed' as const
+  };
+  const sharedDuplicate = {
+    ...sharedReview, duplicate_of: 'SHARED-ID',
+    issues: [{ category: 'uncertain' as const, evidence: 'The box', confidence: 0.3, severity: 'uncertain' as const }]
+  };
+  (sameIdStore as any).data.reviews.push(sharedDuplicate, sharedReview);
+  sharedReview.issues = classifyWithRules(sharedReview.review_text, sharedReview.rating).issues;
+  sharedReview.analysis_method = 'deterministic_rules';
+  sameIdStore.saveReview(sharedReview, 'WS-SHARED');
+  assert.deepEqual(sameIdStore.getReviews('WS-SHARED')[0].issues, sharedDuplicate.issues,
+    'Saving the canonical row must not overwrite a same-ID confirmed duplicate');
+  assert.deepEqual(sameIdStore.getReviews('WS-SHARED')[1].issues, sharedReview.issues,
+    'Saving a review reference must persist that exact canonical row');
+  assert.equal(sameIdStore.getUniqueReviewStats('WS-SHARED').total_imported_records, 2);
   console.log('Regression checks passed: 20 fixture records, 19 unique, 1 confirmed duplicate.');
 } finally {
   fs.rmSync(tempDataDir, { recursive: true, force: true });

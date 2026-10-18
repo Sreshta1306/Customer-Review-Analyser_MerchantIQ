@@ -533,6 +533,12 @@ app.post('/api/analyze', async (req: Request, res: Response) => {
         (r) => r.issues.length === 0 || r.analysis_method === 'unprocessed'
       );
     }
+    // Confirmed duplicates share a review ID with their canonical row and
+    // must retain their relationship. Human decisions are never overwritten
+    // by a batch AI run.
+    targetReviews = targetReviews.filter(
+      (r) => !r.duplicate_of && r.analysis_method !== 'manual_override'
+    );
 
     const analyzed: Review[] = [];
     for (const r of targetReviews) {

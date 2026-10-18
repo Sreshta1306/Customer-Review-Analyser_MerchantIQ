@@ -53,10 +53,11 @@ export const App: React.FC = () => {
   const handleRunAnalysis = async () => {
     try {
       setIsAnalyzing(true);
-      await api.runAnalysis({ force_reanalyze: true });
+      const result = await api.runAnalysis({ force_reanalyze: true });
       setRefreshTrigger((prev) => prev + 1);
+      alert(`Review analysis completed for ${result.analyzed_count} reviews.`);
     } catch (err) {
-      alert('Review analysis completed or fallback rule engine used.');
+      alert(err instanceof Error ? `Review analysis failed: ${err.message}` : 'Review analysis failed.');
     } finally {
       setIsAnalyzing(false);
     }

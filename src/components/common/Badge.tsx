@@ -76,10 +76,10 @@ export const CategoryTag: React.FC<{ category: IssueCategory }> = ({ category })
 };
 
 export const MethodBadge: React.FC<{ method?: string }> = ({ method }) => {
-  if (method === 'gemini_ai') {
+  if (method === 'gemini_ai' || method === 'gemini_ai_enriched') {
     return (
       <span className="inline-flex items-center text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">
-        Gemini 3.8 Flash
+        {method === 'gemini_ai_enriched' ? 'Gemini + Rule Engine' : 'Gemini 3.8 Flash'}
       </span>
     );
   }
