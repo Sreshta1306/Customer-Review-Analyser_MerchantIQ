@@ -20,13 +20,15 @@ import {
 } from 'lucide-react';
 
 interface SignupPageProps {
-  onSuccess: (user: UserAccount) => void;
+  onSuccess: (registeredEmail: string) => void;
   onNavigateToLogin: () => void;
+  onNavigateToLanding: () => void;
 }
 
 export const SignupPage: React.FC<SignupPageProps> = ({
   onSuccess,
-  onNavigateToLogin
+  onNavigateToLogin,
+  onNavigateToLanding
 }) => {
   // Form fields
   const [name, setName] = useState('');
@@ -135,7 +137,7 @@ export const SignupPage: React.FC<SignupPageProps> = ({
         store_name: storeName.trim(),
         password
       });
-      onSuccess(res.user);
+      onSuccess(res.user.email);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to create account. Please check inputs.');
     } finally {
@@ -435,6 +437,7 @@ export const SignupPage: React.FC<SignupPageProps> = ({
               Sign in
             </button>
           </p>
+          <button type="button" onClick={onNavigateToLanding} className="mt-3 text-[11px] font-semibold text-[#635BFF] hover:underline cursor-pointer">Back to MerchantIQ home</button>
         </div>
 
       </div>

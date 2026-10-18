@@ -1,0 +1,242 @@
+/* MerchantIQ public landing page. Everything is scoped to the mounted landing root. */
+.merchantiq-landing {
+  --miq-ink: #111827;
+  --miq-muted: #64748b;
+  --miq-navy: #0b1020;
+  --miq-deep: #111827;
+  --miq-violet: #6d5ef5;
+  --miq-purple: #8b7cff;
+  --miq-lavender: #f5f4ff;
+  --miq-line: #e4e7f0;
+  --miq-white: #fff;
+  box-sizing: border-box;
+  min-height: 100vh;
+  color: var(--miq-ink);
+  background: #fff;
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: clip;
+}
+.merchantiq-landing *, .merchantiq-landing *::before, .merchantiq-landing *::after { box-sizing: inherit; }
+.merchantiq-landing svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.merchantiq-landing .icon-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.merchantiq-landing .skip-link { position: absolute; z-index: 100; top: 8px; left: 8px; padding: 9px 13px; transform: translateY(-160%); color: #171c2b; border-radius: 7px; background: #fff; font-size: 13px; font-weight: 700; }
+.merchantiq-landing .skip-link:focus { transform: translateY(0); }
+.merchantiq-landing a { color: inherit; text-decoration: none; }
+.merchantiq-landing button { font: inherit; }
+.merchantiq-landing :focus-visible { outline: 3px solid #b5adff; outline-offset: 3px; border-radius: 5px; }
+.merchantiq-landing [id] { scroll-margin-top: 84px; }
+.merchantiq-landing .site-shell { width: min(1160px, calc(100% - 56px)); margin-inline: auto; }
+
+/* Header */
+.merchantiq-landing .site-header { position: sticky; z-index: 50; top: 0; background: rgba(11, 16, 32, .94); color: #eef0fb; border-bottom: 1px solid rgba(255,255,255,.08); backdrop-filter: blur(16px); }
+.merchantiq-landing .header-inner { min-height: 76px; display: flex; align-items: center; justify-content: space-between; gap: 28px; }
+.merchantiq-landing .brand { display: inline-flex; align-items: center; gap: 11px; flex: 0 0 auto; }
+.merchantiq-landing .brand-mark { width: 39px; height: 39px; display: grid; place-items: center; border: 1px solid rgba(183,174,255,.45); border-radius: 12px; color: #c7c0ff; background: linear-gradient(145deg, rgba(109,94,245,.26), rgba(109,94,245,.06)); }
+.merchantiq-landing .brand-mark svg { width: 25px; height: 25px; stroke: none; }
+.merchantiq-landing .brand-copy { display: grid; line-height: 1.15; }
+.merchantiq-landing .brand-copy strong { color: #fff; font-size: 17px; letter-spacing: -.04em; font-weight: 750; }
+.merchantiq-landing .brand-copy strong span { color: #b6adff; }
+.merchantiq-landing .brand-copy small { margin-top: 4px; color: #a7afc2; font-size: 10px; letter-spacing: .08em; }
+.merchantiq-landing .site-nav { display: flex; align-items: center; gap: clamp(13px, 1.7vw, 24px); }
+.merchantiq-landing .site-nav > a:not(.button) { color: #bdc4d4; font-size: 13px; font-weight: 550; transition: color .18s ease; }
+.merchantiq-landing .site-nav > a:not(.button):hover { color: #fff; }
+.merchantiq-landing .site-nav .nav-signup { color: #dedaff !important; }
+.merchantiq-landing .button { min-height: 46px; display: inline-flex; justify-content: center; align-items: center; gap: 9px; padding: 0 18px; border: 1px solid transparent; border-radius: 11px; font-size: 13px; line-height: 1.2; font-weight: 680; white-space: nowrap; cursor: pointer; transition: background .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+.merchantiq-landing .button svg { width: 16px; height: 16px; }
+.merchantiq-landing .button-primary { color: #fff; background: linear-gradient(135deg, #7467ff, #5b4ce4); box-shadow: 0 8px 20px rgba(91,76,228,.24); }
+.merchantiq-landing .button-primary:hover { background: linear-gradient(135deg, #857aff, #6758ee); box-shadow: 0 11px 26px rgba(91,76,228,.32); transform: translateY(-1px); }
+.merchantiq-landing .button-secondary { color: #eef0fb; border-color: rgba(255,255,255,.22); background: rgba(255,255,255,.035); }
+.merchantiq-landing .button-secondary:hover, .merchantiq-landing .button-quiet:hover { background: rgba(255,255,255,.09); border-color: rgba(255,255,255,.38); }
+.merchantiq-landing .nav-cta { min-height: 40px; padding-inline: 14px; font-size: 12px; }
+.merchantiq-landing .menu-toggle { display: none; width: 42px; height: 42px; padding: 10px; color: #fff; border: 1px solid rgba(255,255,255,.17); border-radius: 10px; background: transparent; cursor: pointer; }
+.merchantiq-landing .menu-toggle svg { width: 20px; height: 20px; }
+
+/* Hero and illustrative product preview */
+.merchantiq-landing .hero-section { position: relative; isolation: isolate; color: #f6f7fc; background: radial-gradient(ellipse at 82% 16%, rgba(81,67,190,.28), transparent 33%), linear-gradient(180deg, #0b1020, #11172a 76%, #14182c); padding: clamp(62px, 8vw, 102px) 0 78px; }
+.merchantiq-landing .hero-glow { position: absolute; z-index: -1; width: 550px; height: 550px; top: 4%; right: -10%; border-radius: 50%; background: radial-gradient(circle, rgba(109,94,245,.14), transparent 70%); pointer-events: none; }
+.merchantiq-landing .hero-layout { display: grid; grid-template-columns: minmax(0, .9fr) minmax(500px, 1.1fr); align-items: center; gap: clamp(38px, 5vw, 72px); }
+.merchantiq-landing .hero-copy { max-width: 550px; padding-bottom: 12px; }
+.merchantiq-landing .eyebrow, .merchantiq-landing .section-eyebrow { display: inline-flex; align-items: center; gap: 9px; color: #a9a0ff; font-size: 11px; line-height: 1.4; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+.merchantiq-landing .eyebrow { padding: 8px 12px; border: 1px solid rgba(169,160,255,.22); border-radius: 99px; background: rgba(109,94,245,.09); }
+.merchantiq-landing .eyebrow-dot { width: 7px; height: 7px; border-radius: 50%; background: #a99fff; box-shadow: 0 0 12px rgba(169,159,255,.75); }
+.merchantiq-landing .hero-copy h1 { max-width: 13ch; margin: 22px 0 18px; color: #fff; font-size: clamp(38px, 4.1vw, 58px); line-height: 1.08; letter-spacing: -.055em; font-weight: 740; }
+.merchantiq-landing .hero-copy h1 span { color: #b7aeff; }
+.merchantiq-landing .hero-description { max-width: 58ch; margin: 0; color: #bac2d4; font-size: clamp(15px, 1.28vw, 17px); line-height: 1.75; }
+.merchantiq-landing .hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+.merchantiq-landing .hero-assurances { display: flex; flex-wrap: wrap; gap: 12px 23px; margin-top: 25px; color: #aab3c5; font-size: 12px; }
+.merchantiq-landing .hero-assurances span { display: inline-flex; align-items: center; gap: 7px; }
+.merchantiq-landing .hero-assurances svg { width: 15px; height: 15px; color: #a99fff; }
+.merchantiq-landing .product-preview { width: 100%; max-width: 600px; justify-self: end; padding: 21px; color: #20263a; border: 1px solid rgba(255,255,255,.17); border-radius: 18px; background: #fbfcff; box-shadow: 0 30px 90px rgba(0,0,0,.32), 0 0 50px rgba(109,94,245,.1); }
+.merchantiq-landing .preview-topline, .merchantiq-landing .preview-brand, .merchantiq-landing .preview-heading, .merchantiq-landing .panel-heading, .merchantiq-landing .evidence-label, .merchantiq-landing .evidence-footer { display: flex; align-items: center; }
+.merchantiq-landing .preview-topline { justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid #ebedf4; }
+.merchantiq-landing .preview-brand { gap: 9px; color: #252b40; font-size: 12px; font-weight: 730; }
+.merchantiq-landing .preview-brand small { display: block; margin-top: 2px; color: #7a8295; font-size: 10px; font-weight: 500; }
+.merchantiq-landing .preview-mark { width: 29px; height: 29px; display: grid; place-items: center; color: #fff; border-radius: 9px; background: linear-gradient(145deg, #8174ff, #5b4ce4); font-size: 13px; font-weight: 750; }
+.merchantiq-landing .sample-label { display: inline-flex; align-items: center; gap: 6px; padding: 5px 8px; color: #6258b8; border: 1px solid #e0ddff; border-radius: 99px; background: #f5f4ff; font-size: 8px; font-weight: 760; letter-spacing: .07em; }
+.merchantiq-landing .sample-label i { width: 6px; height: 6px; border-radius: 50%; background: #7669ef; }
+.merchantiq-landing .preview-heading { justify-content: space-between; gap: 10px; padding: 17px 0 13px; }
+.merchantiq-landing .preview-kicker { color: #8790a3; font-size: 8px; font-weight: 750; letter-spacing: .11em; }
+.merchantiq-landing .preview-heading h2 { margin: 3px 0 0; color: #1e2438; font-size: 17px; line-height: 1.25; letter-spacing: -.025em; }
+.merchantiq-landing .preview-period { padding: 5px 8px; color: #6b7284; border: 1px solid #e7e9f0; border-radius: 7px; font-size: 9px; }
+.merchantiq-landing .preview-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.merchantiq-landing .metric-card { min-width: 0; padding: 11px; border: 1px solid #e9ebf2; border-radius: 10px; background: #fff; }
+.merchantiq-landing .metric-card > span { display: block; color: #747d91; font-size: 9px; line-height: 1.35; }
+.merchantiq-landing .metric-card strong { display: flex; align-items: center; gap: 6px; margin-top: 5px; color: #20263a; font-size: 22px; line-height: 1.2; letter-spacing: -.04em; }
+.merchantiq-landing .metric-card small { display: block; margin-top: 3px; color: #9299a8; font-size: 8px; }
+.merchantiq-landing .metric-priority strong { color: #b45309; font-size: 16px; letter-spacing: -.01em; }
+.merchantiq-landing .metric-priority strong i { width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; }
+.merchantiq-landing .preview-grid { display: grid; grid-template-columns: 1.12fr .88fr; gap: 9px; margin-top: 9px; }
+.merchantiq-landing .preview-panel { min-width: 0; padding: 12px; border: 1px solid #e9ebf2; border-radius: 10px; background: #fff; }
+.merchantiq-landing .panel-heading { justify-content: space-between; margin-bottom: 9px; color: #343b50; font-size: 10px; font-weight: 720; }
+.merchantiq-landing .panel-caption { color: #9299a8; font-size: 8px; font-weight: 500; }
+.merchantiq-landing .issue-row { display: flex; align-items: center; gap: 7px; padding: 6px 0; border-top: 1px solid #f0f1f6; }
+.merchantiq-landing .issue-icon { width: 23px; height: 23px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 7px; }
+.merchantiq-landing .issue-icon svg { width: 13px; height: 13px; }
+.merchantiq-landing .issue-violet { color: #685add; background: #f0efff; }
+.merchantiq-landing .issue-amber { color: #b96d11; background: #fff5e7; }
+.merchantiq-landing .issue-blue { color: #2877aa; background: #eaf6ff; }
+.merchantiq-landing .issue-name { min-width: 0; color: #555d70; font-size: 9px; line-height: 1.3; }
+.merchantiq-landing .issue-count { margin-left: auto; color: #343b50; font-size: 9px; font-weight: 700; }
+.merchantiq-landing .priority-line { display: grid; grid-template-columns: 46px 1fr; align-items: center; gap: 7px; margin: 10px 0; color: #697286; font-size: 8px; }
+.merchantiq-landing .priority-line > i { height: 6px; overflow: hidden; border-radius: 99px; background: #eff0f5; }
+.merchantiq-landing .priority-line b { display: block; height: 100%; border-radius: inherit; background: #dc5d5d; }
+.merchantiq-landing .priority-line b.priority-high { background: #f0a33b; }
+.merchantiq-landing .priority-line b.priority-medium { background: #7d70ed; }
+.merchantiq-landing .priority-line b.priority-low { background: #9da5b5; }
+.merchantiq-landing .preview-evidence { margin-top: 9px; padding: 12px; border: 1px solid #e7e6f9; border-radius: 10px; background: linear-gradient(115deg, #f8f7ff, #fff 74%); }
+.merchantiq-landing .evidence-label { gap: 8px; color: #383e53; font-size: 10px; font-weight: 730; }
+.merchantiq-landing .evidence-label > svg { width: 17px; height: 17px; color: #6d5ef5; }
+.merchantiq-landing .evidence-label small { display: block; margin-top: 1px; color: #82899a; font-size: 8px; font-weight: 500; }
+.merchantiq-landing .preview-evidence > p { margin: 9px 0; color: #50586d; font-size: 10px; line-height: 1.6; }
+.merchantiq-landing .preview-evidence mark { padding: 1px 3px; color: #4d40b8; border-radius: 3px; background: #e8e5ff; }
+.merchantiq-landing .evidence-footer { flex-wrap: wrap; gap: 6px; }
+.merchantiq-landing .evidence-tag { padding: 3px 7px; color: #5748c6; border-radius: 99px; background: #efedff; font-size: 8px; font-weight: 650; }
+.merchantiq-landing .evidence-tag-amber { color: #9a5b0c; background: #fff2dd; }
+.merchantiq-landing .evidence-arrow { color: #8881c6; font-size: 12px; }
+.merchantiq-landing .action-hint { color: #687184; font-size: 8px; }
+.merchantiq-landing .preview-disclaimer { margin: 10px 0 0; color: #8c93a2; font-size: 8px; line-height: 1.4; text-align: center; }
+
+/* Shared section headings and four-step workflow */
+.merchantiq-landing .workflow-section, .merchantiq-landing .capabilities-section, .merchantiq-landing .benefits-section { padding: clamp(68px, 8vw, 100px) 0; }
+.merchantiq-landing .workflow-section { background: #f8f9fc; }
+.merchantiq-landing .section-heading { max-width: 680px; margin: 0 auto 42px; text-align: center; }
+.merchantiq-landing .section-heading .section-eyebrow, .merchantiq-landing .benefits-intro .section-eyebrow { color: #6559d7; }
+.merchantiq-landing .section-heading h2, .merchantiq-landing .benefits-intro h2, .merchantiq-landing .closing-content h2 { margin: 12px 0 11px; font-size: clamp(29px, 3.3vw, 42px); line-height: 1.15; letter-spacing: -.045em; font-weight: 730; }
+.merchantiq-landing .section-heading p { margin: 0; color: var(--miq-muted); font-size: 15px; }
+.merchantiq-landing .workflow-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.merchantiq-landing .workflow-card { position: relative; min-height: 260px; padding: 23px 21px; border: 1px solid #e6e8f0; border-radius: 15px; background: #fff; box-shadow: 0 8px 25px rgba(25,31,55,.035); transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
+.merchantiq-landing .workflow-card:hover { transform: translateY(-3px); border-color: #c8c2ff; box-shadow: 0 15px 30px rgba(55,48,130,.09); }
+.merchantiq-landing .workflow-number { position: absolute; top: 19px; right: 20px; color: #a5a9b6; font-size: 11px; font-weight: 760; letter-spacing: .08em; }
+.merchantiq-landing .workflow-icon { width: 43px; height: 43px; display: grid; place-items: center; color: #6559dc; border: 1px solid #e5e2ff; border-radius: 12px; background: #f4f2ff; }
+.merchantiq-landing .workflow-icon svg { width: 20px; height: 20px; }
+.merchantiq-landing .workflow-card h3 { margin: 24px 0 8px; color: #1d2434; font-size: 16px; line-height: 1.3; letter-spacing: -.02em; }
+.merchantiq-landing .workflow-card p { margin: 0; color: #687184; font-size: 13px; line-height: 1.65; }
+
+/* Capabilities */
+.merchantiq-landing .capabilities-section { position: relative; color: #eef0fb; background: radial-gradient(ellipse at 90% 0%, rgba(109,94,245,.19), transparent 34%), #101629; }
+.merchantiq-landing .section-heading-dark .section-eyebrow { color: #b0a8ff; }
+.merchantiq-landing .section-heading-dark h2 { color: #fff; }
+.merchantiq-landing .section-heading-dark p { color: #aeb7c9; }
+.merchantiq-landing .capability-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 13px; }
+.merchantiq-landing .capability-card { min-height: 208px; padding: 21px 19px; border: 1px solid rgba(255,255,255,.105); border-radius: 14px; background: rgba(255,255,255,.045); transition: border-color .2s ease, background .2s ease, transform .2s ease; }
+.merchantiq-landing .capability-card:hover { transform: translateY(-2px); border-color: rgba(169,159,255,.48); background: rgba(255,255,255,.07); }
+.merchantiq-landing .capability-icon { width: 38px; height: 38px; display: grid; place-items: center; color: #b8b0ff; border: 1px solid rgba(169,159,255,.2); border-radius: 11px; background: rgba(109,94,245,.14); }
+.merchantiq-landing .capability-icon svg { width: 18px; height: 18px; }
+.merchantiq-landing .capability-card h3 { margin: 16px 0 6px; color: #f5f6fb; font-size: 14px; line-height: 1.4; letter-spacing: -.01em; }
+.merchantiq-landing .capability-card p { margin: 0; color: #aab3c5; font-size: 12px; line-height: 1.65; }
+
+/* Benefits and closing call to action */
+.merchantiq-landing .benefits-section { background: #fff; }
+.merchantiq-landing .benefits-layout { display: grid; grid-template-columns: .82fr 1.18fr; align-items: center; gap: clamp(48px, 8vw, 110px); }
+.merchantiq-landing .benefits-intro h2 { max-width: 12ch; color: #161d2d; }
+.merchantiq-landing .benefits-intro > p { max-width: 42ch; margin: 0; color: #687184; font-size: 14px; line-height: 1.75; }
+.merchantiq-landing .text-link { display: inline-flex; align-items: center; gap: 8px; margin-top: 24px; color: #594dc7; font-size: 13px; font-weight: 700; }
+.merchantiq-landing .text-link svg { width: 16px; height: 16px; transition: transform .18s ease; }
+.merchantiq-landing .text-link:hover svg { transform: translateX(3px); }
+.merchantiq-landing .benefits-list { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin: 0; padding: 0; list-style: none; }
+.merchantiq-landing .benefits-list li { display: flex; align-items: flex-start; gap: 12px; min-height: 112px; padding: 18px; border: 1px solid #eaebf2; border-radius: 13px; background: #fbfbfd; }
+.merchantiq-landing .benefits-list li > span { width: 25px; height: 25px; display: grid; place-items: center; flex: 0 0 auto; color: #5d50cf; border-radius: 50%; background: #eeecff; }
+.merchantiq-landing .benefits-list svg { width: 14px; height: 14px; stroke-width: 2.3; }
+.merchantiq-landing .benefits-list strong { display: block; color: #252c3d; font-size: 12px; line-height: 1.45; }
+.merchantiq-landing .benefits-list p { margin: 5px 0 0; color: #737b8c; font-size: 11px; line-height: 1.55; }
+.merchantiq-landing .closing-section { position: relative; isolation: isolate; overflow: hidden; padding: 78px 0 84px; color: #fff; background: #0b1020; text-align: center; }
+.merchantiq-landing .closing-glow { position: absolute; z-index: -1; inset: 0; background: radial-gradient(ellipse at 50% 110%, rgba(98,82,222,.48), transparent 58%); pointer-events: none; }
+.merchantiq-landing .closing-content { max-width: 720px; }
+.merchantiq-landing .closing-content .section-eyebrow { color: #b5adff; }
+.merchantiq-landing .closing-content h2 { max-width: 18ch; margin: 14px auto 12px; color: #fff; }
+.merchantiq-landing .closing-content > p { max-width: 55ch; margin: 0 auto; color: #b8c0d1; font-size: 14px; }
+.merchantiq-landing .closing-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 11px; margin-top: 26px; }
+.merchantiq-landing .button-quiet { color: #f1f1fb; border-color: rgba(255,255,255,.25); background: rgba(255,255,255,.035); }
+
+/* Footer */
+.merchantiq-landing .site-footer { color: #aeb6c8; background: #080c17; }
+.merchantiq-landing .footer-main { display: grid; grid-template-columns: auto minmax(190px,1fr) auto; align-items: center; gap: 30px; padding-top: 31px; padding-bottom: 27px; }
+.merchantiq-landing .footer-brand { color: #fff; }
+.merchantiq-landing .footer-main > p { max-width: 43ch; margin: 0; color: #929caf; font-size: 11px; line-height: 1.6; }
+.merchantiq-landing .footer-main nav { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+.merchantiq-landing .footer-main nav a { color: #aeb6c8; font-size: 10px; transition: color .18s ease; }
+.merchantiq-landing .footer-main nav a:hover { color: #fff; }
+.merchantiq-landing .footer-bottom { display: flex; justify-content: space-between; gap: 15px; padding-top: 15px; padding-bottom: 19px; border-top: 1px solid rgba(255,255,255,.09); color: #778196; font-size: 9px; }
+
+@media (max-width: 1060px) {
+  .merchantiq-landing .header-inner { gap: 18px; }
+  .merchantiq-landing .site-nav { gap: 13px; }
+  .merchantiq-landing .hero-layout { grid-template-columns: minmax(0,.82fr) minmax(430px,1.18fr); gap: 30px; }
+  .merchantiq-landing .hero-copy h1 { font-size: clamp(36px,4.3vw,50px); }
+}
+@media (max-width: 900px) {
+  .merchantiq-landing .header-inner { min-height: 70px; }
+  .merchantiq-landing .menu-toggle { display: grid; place-items: center; margin-left: auto; }
+  .merchantiq-landing .site-nav { display: none; position: absolute; top: 100%; left: 0; right: 0; align-items: stretch; flex-direction: column; gap: 0; padding: 9px 28px 19px; border-bottom: 1px solid rgba(255,255,255,.1); background: #0b1020; box-shadow: 0 16px 25px rgba(0,0,0,.2); }
+  .merchantiq-landing .site-nav.is-open { display: flex; }
+  .merchantiq-landing .site-nav > a:not(.button) { padding: 11px 2px; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 14px; }
+  .merchantiq-landing .site-nav .nav-cta { align-self: flex-start; margin-top: 13px; }
+  .merchantiq-landing .hero-layout { grid-template-columns: 1fr; gap: 42px; }
+  .merchantiq-landing .hero-copy { max-width: 700px; }
+  .merchantiq-landing .hero-copy h1 { max-width: 16ch; font-size: clamp(40px,6vw,58px); }
+  .merchantiq-landing .product-preview { max-width: 680px; justify-self: start; }
+  .merchantiq-landing .workflow-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .merchantiq-landing .capability-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .merchantiq-landing .benefits-layout { grid-template-columns: 1fr; gap: 32px; }
+  .merchantiq-landing .benefits-intro h2 { max-width: 20ch; }
+}
+@media (max-width: 600px) {
+  .merchantiq-landing .site-shell { width: min(100% - 36px, 480px); }
+  .merchantiq-landing .hero-section { padding: 49px 0 60px; }
+  .merchantiq-landing .hero-layout { gap: 32px; }
+  .merchantiq-landing .hero-copy h1 { margin-top: 19px; font-size: clamp(36px,10vw,47px); }
+  .merchantiq-landing .hero-description { font-size: 14px; }
+  .merchantiq-landing .hero-actions { align-items: stretch; flex-direction: column; }
+  .merchantiq-landing .hero-actions .button { width: 100%; }
+  .merchantiq-landing .hero-assurances { flex-direction: column; gap: 8px; }
+  .merchantiq-landing .product-preview { padding: 13px; border-radius: 14px; }
+  .merchantiq-landing .sample-label { font-size: 7px; }
+  .merchantiq-landing .preview-metrics { gap: 6px; }
+  .merchantiq-landing .metric-card { padding: 8px 7px; }
+  .merchantiq-landing .metric-card > span { min-height: 25px; font-size: 8px; }
+  .merchantiq-landing .metric-card strong { font-size: 18px; }
+  .merchantiq-landing .metric-priority strong { font-size: 13px; }
+  .merchantiq-landing .preview-grid { grid-template-columns: 1fr; }
+  .merchantiq-landing .priority-panel { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; }
+  .merchantiq-landing .priority-panel .panel-heading { grid-column: 1/-1; }
+  .merchantiq-landing .priority-line { margin: 5px 0; }
+  .merchantiq-landing .workflow-grid, .merchantiq-landing .capability-grid { grid-template-columns: 1fr; }
+  .merchantiq-landing .workflow-card { min-height: 0; padding: 20px; }
+  .merchantiq-landing .workflow-card h3 { margin-top: 18px; }
+  .merchantiq-landing .capability-card { min-height: 0; }
+  .merchantiq-landing .benefits-list { grid-template-columns: 1fr; }
+  .merchantiq-landing .benefits-list li { min-height: 0; }
+  .merchantiq-landing .footer-main { grid-template-columns: 1fr; gap: 15px; }
+  .merchantiq-landing .footer-main nav { gap: 10px 14px; }
+  .merchantiq-landing .footer-bottom { align-items: flex-start; flex-direction: column; }
+  .merchantiq-landing .section-heading { margin-bottom: 28px; }
+  .merchantiq-landing .closing-section { padding: 63px 0 68px; }
+  .merchantiq-landing .closing-actions { align-items: stretch; flex-direction: column; }
+  .merchantiq-landing .closing-actions .button { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .merchantiq-landing *, .merchantiq-landing *::before, .merchantiq-landing *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

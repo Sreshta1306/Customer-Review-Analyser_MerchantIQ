@@ -19,13 +19,19 @@ import {
 interface LoginPageProps {
   onSuccess: (user: UserAccount) => void;
   onNavigateToSignup: () => void;
+  onNavigateToLanding: () => void;
+  initialEmail?: string;
+  registrationSuccess?: boolean;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({
   onSuccess,
-  onNavigateToSignup
+  onNavigateToSignup,
+  onNavigateToLanding,
+  initialEmail = '',
+  registrationSuccess = false
 }) => {
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
@@ -112,6 +118,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
           </p>
         </div>
 
+        {registrationSuccess && (
+          <div role="status" aria-live="polite" className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+            <p className="font-medium">Account created successfully! Please log in to continue.</p>
+          </div>
+        )}
         {/* Global Error Banner */}
         {errorMessage && (
           <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2.5 animate-fadeIn">
@@ -247,6 +259,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
               Create an account
             </button>
           </p>
+          <button type="button" onClick={onNavigateToLanding} className="mt-3 text-[11px] font-semibold text-[#635BFF] hover:underline cursor-pointer">Back to MerchantIQ home</button>
         </div>
 
       </div>

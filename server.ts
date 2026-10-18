@@ -228,7 +228,6 @@ app.post('/api/auth/register', (req: Request, res: Response) => {
     };
 
     db.createUser(newUser);
-    issueSession(res, newUser.user_id);
 
     db.addAuditLog({
       log_id: `AUD-${Date.now()}`,

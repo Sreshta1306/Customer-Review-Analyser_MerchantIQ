@@ -66,18 +66,28 @@ function endpoint(route: string): string {
   return `http://127.0.0.1:${port}${route}`;
 }
 
-async function register(email: string): Promise<{ cookie: string; user: { workspace_id: string } }> {
+async function register(email: string): Promise<{ email: string; user: { workspace_id: string } }> {
   const response = await fetch(endpoint('/api/auth/register'), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ name: 'API Test User', email, store_name: 'Test Store', password: 'StrongPass123' })
   });
   assert.equal(response.status, 201);
+  assert.equal(response.headers.get('set-cookie'), null, 'registration must not create an authenticated session');
+  const body = await response.json() as { user: { workspace_id: string } };
+  return { email, user: body.user };
+}
+
+async function login(email: string): Promise<string> {
+  const response = await fetch(endpoint('/api/auth/login'), {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password: 'StrongPass123' })
+  });
+  assert.equal(response.status, 200, 'valid credentials must be accepted');
   const cookieHeader = response.headers.get('set-cookie') || '';
   assert.match(cookieHeader, /HttpOnly/i);
   assert.match(cookieHeader, /Max-Age=604800/);
-  const body = await response.json() as { user: { workspace_id: string } };
-  return { cookie: cookieHeader.split(';')[0], user: body.user };
+  return cookieHeader.split(';')[0];
 }
 
 async function request(route: string, cookie: string, init: RequestInit = {}): Promise<Response> {
@@ -96,19 +106,18 @@ try {
   assert.equal((await fetch(endpoint('/api/stats'))).status, 401, 'protected endpoints must reject anonymous requests');
 
   const first = await register('first@example.test');
+  assert.equal((await fetch(endpoint('/api/auth/me')).then((response) => response.status)), 401,
+    'a newly registered user must remain signed out');
+  assert.equal((await fetch(endpoint('/api/stats')).then((response) => response.status)), 401,
+    'protected dashboard APIs must reject a user before login');
   const badLogin = await fetch(endpoint('/api/auth/login'), {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: 'first@example.test', password: 'wrong-password' })
   });
   assert.equal(badLogin.status, 401, 'invalid passwords must be rejected');
-  const validLogin = await fetch(endpoint('/api/auth/login'), {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'first@example.test', password: 'StrongPass123' })
-  });
-  assert.equal(validLogin.status, 200, 'valid credentials must be accepted');
-  assert.match(validLogin.headers.get('set-cookie') || '', /HttpOnly/i);
+  const firstCookie = await login('first@example.test');
 
-  const c01Response = await request('/api/reviews/import', first.cookie, {
+  const c01Response = await request('/api/reviews/import', firstCookie, {
     method: 'POST', body: JSON.stringify({ filename: 'C01-fixture.json', records: fixture, auto_analyze: true })
   });
   assert.equal(c01Response.status, 200);
@@ -116,7 +125,7 @@ try {
   assert.equal(c01Result.added, 20, 'the supplied C01 fixture records must be persisted');
   assert.equal(c01Result.total_in_db, 20);
 
-  const importResponse = await request('/api/reviews/import', first.cookie, {
+  const importResponse = await request('/api/reviews/import', firstCookie, {
     method: 'POST',
     body: JSON.stringify({ filename: 'new-complaints.json', auto_analyze: true, records: [
       { review_id: 'UPLOAD-REUSED', review_text: 'invalid first row', rating: 0 },
@@ -141,7 +150,7 @@ try {
   assert.equal(importResult.errors[0].field, 'rating');
   assert.equal(importResult.errors[1].field, 'review_id');
 
-  const allReviewsResponse = await request('/api/reviews?include_duplicates=true', first.cookie);
+  const allReviewsResponse = await request('/api/reviews?include_duplicates=true', firstCookie);
   assert.equal(allReviewsResponse.status, 200);
   const allReviews = (await allReviewsResponse.json() as { reviews: any[] }).reviews;
   const uploaded = allReviews.find((review) => review.review_id === 'UPLOAD-REUSED');
@@ -158,21 +167,22 @@ try {
   const c01Duplicate = allReviews.find((review) => review.review_id === 'R005');
   assert.equal(c01Duplicate?.duplicate_of, 'R004', 'C01 duplicate handling must be retained');
 
-  const issuesResponse = await request('/api/issues', first.cookie);
+  const issuesResponse = await request('/api/issues', firstCookie);
   const issues = (await issuesResponse.json() as { issues: { category: string; review_ids: string[] }[] }).issues;
   assert.ok(issues.some((issue) => issue.review_ids.includes('UPLOAD-REFUND-001')),
     'uploaded review text must feed the issue aggregation API');
-  const productsResponse = await request('/api/products', first.cookie);
+  const productsResponse = await request('/api/products', firstCookie);
   const products = (await productsResponse.json() as { products: { product_id: string; total_unique_reviews: number }[] }).products;
   assert.ok(products.some((product) => product.product_id === 'UNKNOWN-SKU' && product.total_unique_reviews === 1));
 
-  const emptyImport = await request('/api/reviews/import', first.cookie, { method: 'POST', body: JSON.stringify({ records: [], auto_analyze: true }) });
+  const emptyImport = await request('/api/reviews/import', firstCookie, { method: 'POST', body: JSON.stringify({ records: [], auto_analyze: true }) });
   assert.equal(emptyImport.status, 422, 'empty imports should return a validation error');
-  const malformedShape = await request('/api/reviews/import', first.cookie, { method: 'POST', body: JSON.stringify({ records: { unexpected: [] } }) });
+  const malformedShape = await request('/api/reviews/import', firstCookie, { method: 'POST', body: JSON.stringify({ records: { unexpected: [] } }) });
   assert.equal(malformedShape.status, 400, 'malformed dataset shapes should be rejected');
 
   const second = await register('second@example.test');
-  const isolatedReviews = await request('/api/reviews', second.cookie);
+  const secondCookie = await login(second.email);
+  const isolatedReviews = await request('/api/reviews', secondCookie);
   const secondWorkspaceReviews = (await isolatedReviews.json() as { reviews: any[] }).reviews;
   assert.equal(secondWorkspaceReviews.length, 0, 'a second merchant must not see the first merchant reviews');
 
@@ -181,7 +191,7 @@ try {
   JSON.parse(persistedBeforeRestart);
   const hashBeforeRestart = crypto.createHash('sha256').update(persistedBeforeRestart).digest('hex');
   await startServer();
-  const afterRestart = await request('/api/reviews?include_duplicates=true', first.cookie);
+  const afterRestart = await request('/api/reviews?include_duplicates=true', firstCookie);
   assert.equal(afterRestart.status, 200, 'the persisted session and reviews should survive restart');
   const restartedReviews = (await afterRestart.json() as { reviews: any[] }).reviews;
   assert.ok(restartedReviews.some((review) => review.review_id === 'UPLOAD-REFUND-001'));
@@ -190,9 +200,9 @@ try {
   assert.equal(crypto.createHash('sha256').update(persistedAfterRestart).digest('hex'), hashBeforeRestart,
     'loading the valid JSON database on restart must not rewrite it');
 
-  const logout = await request('/api/auth/logout', first.cookie, { method: 'POST', body: JSON.stringify({}) });
+  const logout = await request('/api/auth/logout', firstCookie, { method: 'POST', body: JSON.stringify({}) });
   assert.equal(logout.status, 200);
-  assert.equal((await request('/api/stats', first.cookie)).status, 401, 'logout must invalidate the session');
+  assert.equal((await request('/api/stats', firstCookie)).status, 401, 'logout must invalidate the session');
   console.log('Isolated API workflow passed: auth, C01 import, validation, trusted analysis, issue/product aggregation, workspace isolation, persistence/restart, and logout.');
 } finally {
   await stopServer();

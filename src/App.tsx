@@ -15,13 +15,16 @@ import { ReportsExports } from './pages/ReportsExports';
 import { Settings } from './pages/Settings';
 import { LoginPage } from './pages/auth/LoginPage';
 import { SignupPage } from './pages/auth/SignupPage';
+import { PublicLandingPage } from './pages/landing/PublicLandingPage';
 import { api, auth } from './api/client';
 import { UserAccount } from './types';
 
 export const App: React.FC = () => {
   // Authentication state
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => auth.getUser());
-  const [authView, setAuthView] = useState<'login' | 'signup'>('login');
+  const [authView, setAuthView] = useState<'landing' | 'login' | 'signup'>('landing');
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [registrationSuccess, setRegistrationSuccess] = useState(false);
   const [isVerifyingAuth, setIsVerifyingAuth] = useState(true);
 
   // App navigation & state
@@ -70,7 +73,7 @@ export const App: React.FC = () => {
   const handleSignOut = async () => {
     await auth.logout();
     setCurrentUser(null);
-    setAuthView('login');
+    setAuthView('landing');
   };
 
   // If verifying initial session
@@ -96,19 +99,41 @@ export const App: React.FC = () => {
 
   // If unauthenticated: render Login or Signup page
   if (!currentUser) {
+    if (authView === 'landing') {
+      return <PublicLandingPage onNavigate={(destination) => setAuthView(destination)} />;
+    }
+
     if (authView === 'signup') {
       return (
         <SignupPage
-          onSuccess={(user) => setCurrentUser(user)}
-          onNavigateToLogin={() => setAuthView('login')}
+          onSuccess={(email) => {
+            setRegisteredEmail(email);
+            setRegistrationSuccess(true);
+            setAuthView('login');
+          }}
+          onNavigateToLogin={() => {
+            setRegistrationSuccess(false);
+            setAuthView('login');
+          }}
+          onNavigateToLanding={() => setAuthView('landing')}
         />
       );
     }
 
     return (
       <LoginPage
-        onSuccess={(user) => setCurrentUser(user)}
-        onNavigateToSignup={() => setAuthView('signup')}
+        onSuccess={(user) => {
+          setRegistrationSuccess(false);
+          setRegisteredEmail('');
+          setCurrentUser(user);
+        }}
+        onNavigateToSignup={() => {
+          setRegistrationSuccess(false);
+          setAuthView('signup');
+        }}
+        onNavigateToLanding={() => setAuthView('landing')}
+        initialEmail={registeredEmail}
+        registrationSuccess={registrationSuccess}
       />
     );
   }
