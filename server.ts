@@ -13,7 +13,7 @@ import {
   isGeminiConfigured
 } from './src/server/classifier';
 import { Review, CorrectiveAction, DecisionVersion } from './src/types';
-import { validateReviewRecord } from './src/import/parsing';
+import { normalizeReviewImportRows } from './src/import/parsing';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -388,91 +388,22 @@ app.post('/api/reviews/import', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No review array found. Expected an array, reviews[], or records.reviews[].' });
     }
 
-    const errors: { row: number; field: string; message: string }[] = [];
-    const validReviews: Review[] = [];
-    const seenIdsInBatch = new Set<string>();
-    let duplicateCandidates = 0;
-
-    inputRecords.forEach((raw: any, index: number) => {
-      const rowNum = index + 1;
-      const validationError = validateReviewRecord(raw);
-      if (validationError) {
-        errors.push({ row: rowNum, ...validationError });
-        return;
-      }
-      const product = raw.product && typeof raw.product === 'object' ? raw.product : {};
-      const reviewId = String(raw.review_id || raw.id || raw.reviewId || '').trim();
-      const productId = String(raw.product_id || raw.productId || product.product_id || product.id || 'PROD-UNKNOWN').trim();
-      const productName = raw.product_name || raw.productName || product.product_name || product.name;
-      const reviewText = String(raw.review_text || raw.text || raw.content || raw.review || '').trim();
-      const rating = Number(raw.rating);
-      const createdAt = raw.created_at || raw.createdAt || raw.date || new Date().toISOString();
-
-      if (!reviewId) {
-        errors.push({ row: rowNum, field: 'review_id', message: 'Missing review_id' });
-        return;
-      }
-      if (seenIdsInBatch.has(reviewId)) {
-        duplicateCandidates++;
-        errors.push({ row: rowNum, field: 'review_id', message: `Duplicate review_id in batch: ${reviewId}` });
-        return;
-      }
-      seenIdsInBatch.add(reviewId);
-
-      if (!reviewText) {
-        errors.push({ row: rowNum, field: 'review_text', message: 'Review text cannot be empty' });
-        return;
-      }
-
-      if (isNaN(rating) || rating < 1 || rating > 5) {
-        errors.push({ row: rowNum, field: 'rating', message: 'Rating must be a number between 1 and 5' });
-        return;
-      }
-
-      // Safe date validation
-      let validDate = createdAt;
-      try {
-        const d = new Date(createdAt);
-        if (isNaN(d.getTime())) validDate = new Date().toISOString();
-        else validDate = d.toISOString();
-      } catch {
-        validDate = new Date().toISOString();
-      }
-
-      validReviews.push({
-        review_id: reviewId,
-        product_id: productId || 'PROD-UNKNOWN',
-        product_name: productName || (productId === 'PROD-UNKNOWN' ? 'Unknown Product' : undefined),
-        review_text: reviewText,
-        rating,
-        created_at: validDate,
-        issues: raw.issues && Array.isArray(raw.issues) ? raw.issues : [],
-        evaluation_expected_topics: Array.isArray(raw.expected_topics)
-          ? raw.expected_topics.map((topic: unknown) => String(topic))
-          : Array.isArray(raw.evaluation_expected_topics)
-          ? raw.evaluation_expected_topics.map((topic: unknown) => String(topic))
-          : undefined,
-        analysis_method: raw.analysis_method || 'unprocessed',
-        needs_human_review: false,
-        duplicate_of: typeof raw.duplicate_of === 'string' ? raw.duplicate_of : undefined,
-        is_duplicate_candidate: raw.is_duplicate_candidate === true,
-        duplicate_similarity:
-          typeof raw.duplicate_similarity === 'number' ? raw.duplicate_similarity : undefined,
-        duplicate_reason: typeof raw.duplicate_reason === 'string' ? raw.duplicate_reason : undefined
-      });
-    });
-
+    const { validRecords, errors, duplicateCandidates } = normalizeReviewImportRows(inputRecords);
+    const validReviews: Review[] = validRecords.map((record) => ({
+      ...record,
+      issues: [],
+      analysis_method: 'unprocessed',
+      needs_human_review: false
+    }));
     // Optional Auto-classify on import
     if (auto_analyze && validReviews.length > 0) {
       for (const rev of validReviews) {
-        if (rev.issues.length === 0) {
-          const res = await classifyReview(rev, true);
-          rev.issues = res.issues;
-          rev.sentiment = res.sentiment;
-          rev.needs_human_review = res.needs_human_review;
-          rev.analysis_method = res.method;
-          rev.analyzed_at = new Date().toISOString();
-        }
+        const result = await classifyReview(rev, true);
+        rev.issues = result.issues;
+        rev.sentiment = result.sentiment;
+        rev.needs_human_review = result.needs_human_review;
+        rev.analysis_method = result.method;
+        rev.analyzed_at = new Date().toISOString();
       }
     }
 

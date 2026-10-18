@@ -23,7 +23,6 @@ COPY --from=builder --chown=node:node /app/src ./src
 COPY --from=builder --chown=node:node /app/dist ./dist
 COPY --from=builder --chown=node:node /app/Starter_Data ./Starter_Data
 COPY --from=builder --chown=node:node /app/starter-data ./starter-data
-COPY --from=builder --chown=node:node /app/data ./data
 
 RUN mkdir -p /app/data && chown -R node:node /app/data
 

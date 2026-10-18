@@ -10,7 +10,7 @@
     "start": "tsx server.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx test/isolated_c01.ts && tsx test/data_regressions.ts"
+    "test": "tsx test/isolated_c01.ts && tsx test/data_regressions.ts && tsx test/import_api_workflow.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

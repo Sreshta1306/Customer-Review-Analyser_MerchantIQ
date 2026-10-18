@@ -286,35 +286,52 @@ export class Store {
   }
 
   private load(): DatabaseSchema {
-    try {
-      this.ensureDir();
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.reviews)) {
-          if (!Array.isArray(parsed.users)) parsed.users = [];
-          if (!Array.isArray(parsed.sessions)) parsed.sessions = [];
-          parsed.users = parsed.users.map((user: UserRecord) => ({
-            ...user,
-            workspace_id: user.workspace_id || `WS-${user.user_id}`
-          }));
-          if (!parsed.settingsByWorkspace || typeof parsed.settingsByWorkspace !== 'object') {
-            parsed.settingsByWorkspace = {};
-          }
-          if (!parsed.businessAssumptionsByWorkspace || typeof parsed.businessAssumptionsByWorkspace !== 'object') {
-            parsed.businessAssumptionsByWorkspace = {};
-          }
-          this.reconcileDuplicateMetadata(parsed);
-          fs.writeFileSync(DB_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.warn('Could not read existing db.json, initializing fresh default state:', e);
+    this.ensureDir();
+    if (!fs.existsSync(DB_FILE)) {
+      const defaultState = this.getDefaultState();
+      this.save(defaultState);
+      return defaultState;
     }
-    const defaultState = this.getDefaultState();
-    this.save(defaultState);
-    return defaultState;
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'invalid JSON';
+      throw new Error(`Existing MerchantIQ database could not be parsed; it was left untouched (${reason}).`);
+    }
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.reviews)) {
+      throw new Error('Existing MerchantIQ database has an invalid structure; it was left untouched.');
+    }
+
+    const defaults = this.getDefaultState();
+    const arrayFields = [
+      'users', 'sessions', 'actions', 'decisions', 'auditLogs', 'interviews', 'pilots', 'importJobs', 'actionCostTable'
+    ] as const;
+    for (const field of arrayFields) {
+      if (parsed[field] === undefined) parsed[field] = [];
+      else if (!Array.isArray(parsed[field])) {
+        throw new Error(`Existing MerchantIQ database field '${field}' is invalid; it was left untouched.`);
+      }
+    }
+    parsed.users = parsed.users.map((user: UserRecord) => ({
+      ...user,
+      workspace_id: user.workspace_id || `WS-${user.user_id}`
+    }));
+    if (!parsed.settings || typeof parsed.settings !== 'object') parsed.settings = defaults.settings;
+    if (!parsed.businessAssumptions || typeof parsed.businessAssumptions !== 'object') {
+      parsed.businessAssumptions = defaults.businessAssumptions;
+    }
+    if (!parsed.settingsByWorkspace || typeof parsed.settingsByWorkspace !== 'object') {
+      parsed.settingsByWorkspace = {};
+    }
+    if (!parsed.businessAssumptionsByWorkspace || typeof parsed.businessAssumptionsByWorkspace !== 'object') {
+      parsed.businessAssumptionsByWorkspace = {};
+    }
+
+    // Reconcile only in memory. Startup must never rewrite an existing database.
+    this.reconcileDuplicateMetadata(parsed);
+    return parsed as DatabaseSchema;
   }
 
   private reconcileDuplicateMetadata(data: DatabaseSchema): void {
@@ -436,6 +453,16 @@ export class Store {
   }
 
   public importReviews(newReviews: Review[], job: ImportJob, workspaceId?: string): { added: number; updated: number; total: number } {
+    const previousReviews = this.data.reviews;
+    const previousImportJobs = this.data.importJobs;
+    const previousAuditLogs = this.data.auditLogs;
+    // Stage changes against copies so an I/O failure cannot leave this process
+    // serving an import that was never durably committed.
+    this.data.reviews = [...previousReviews];
+    this.data.importJobs = [...previousImportJobs];
+    this.data.auditLogs = [...previousAuditLogs];
+
+    try {
     let added = 0;
     let updated = 0;
 
@@ -457,9 +484,9 @@ export class Store {
             ...existing,
             ...incoming,
             // preserve any manual overrides
-            issues: existing.analysis_method === 'manual_override'
-              ? existing.issues
-              : incoming.issues
+            issues: existing.analysis_method === 'manual_override' ? existing.issues : incoming.issues,
+            analysis_method: existing.analysis_method === 'manual_override' ? existing.analysis_method : incoming.analysis_method,
+            analyzed_at: existing.analysis_method === 'manual_override' ? existing.analyzed_at : incoming.analyzed_at
           };
           if (incoming.duplicate_of === undefined && existing.duplicate_of !== undefined) {
             this.data.reviews[idx].duplicate_of = existing.duplicate_of;
@@ -526,9 +553,7 @@ export class Store {
 
     job.duplicate_candidates = Math.max(job.duplicate_candidates, detectedDuplicateCandidates);
     this.data.importJobs.unshift(job);
-    this.save();
-
-    this.addAuditLog({
+    this.data.auditLogs.unshift({
       log_id: `AUD-${Date.now()}`,
       event_type: 'IMPORT_COMPLETED',
       entity_id: job.job_id,
@@ -538,8 +563,16 @@ export class Store {
       details: `Imported ${job.filename}: ${added} added, ${updated} reconciled, ${job.duplicate_candidates} duplicates flagged.`,
       workspace_id: workspaceId
     });
+    this.data.auditLogs = this.data.auditLogs.slice(0, 200);
+    this.save();
 
     return { added, updated, total: this.getReviews(workspaceId).length };
+    } catch (error) {
+      this.data.reviews = previousReviews;
+      this.data.importJobs = previousImportJobs;
+      this.data.auditLogs = previousAuditLogs;
+      throw error;
+    }
   }
 
   // OFFICIAL C01 DATASET LOADER (Idempotent, preserves R001-R020 IDs, separates predictions from reference labels)

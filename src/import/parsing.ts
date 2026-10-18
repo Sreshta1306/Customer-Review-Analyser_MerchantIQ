@@ -34,6 +34,64 @@ export function normalizeImportPayload(payload: unknown): NormalizedReviewRecord
   return [payload];
 }
 
+export function normalizeReviewImportRows(inputRecords: unknown[]): {
+  validRecords: {
+    review_id: string;
+    product_id: string;
+    product_name?: string;
+    review_text: string;
+    rating: number;
+    created_at: string;
+    evaluation_expected_topics?: string[];
+  }[];
+  errors: { row: number; field: string; message: string }[];
+  duplicateCandidates: number;
+} {
+  const validRecords: ReturnType<typeof normalizeReviewImportRows>['validRecords'] = [];
+  const errors: { row: number; field: string; message: string }[] = [];
+  const seenIds = new Set<string>();
+  let duplicateCandidates = 0;
+
+  inputRecords.forEach((raw, index) => {
+    const row = index + 1;
+    const validationError = validateReviewRecord(raw);
+    if (validationError) {
+      errors.push({ row, ...validationError });
+      return;
+    }
+    const source = raw as Record<string, unknown>;
+    const product = source.product && typeof source.product === 'object'
+      ? source.product as Record<string, unknown>
+      : {};
+    const reviewId = String(source.review_id ?? source.id ?? source.reviewId ?? '').trim();
+    const reviewText = String(source.review_text ?? source.text ?? source.content ?? source.review ?? '').trim();
+    const rating = Number(source.rating);
+    const productId = String(source.product_id ?? source.productId ?? product.product_id ?? product.id ?? 'PROD-UNKNOWN').trim() || 'PROD-UNKNOWN';
+    if (seenIds.has(reviewId)) {
+      duplicateCandidates += 1;
+      errors.push({ row, field: 'review_id', message: `Duplicate review_id in batch: ${reviewId}` });
+      return;
+    }
+    const rawDate = source.created_at ?? source.createdAt ?? source.date;
+    const parsedDate = rawDate ? new Date(String(rawDate)) : new Date();
+    const createdAt = Number.isNaN(parsedDate.getTime()) ? new Date().toISOString() : parsedDate.toISOString();
+    seenIds.add(reviewId);
+    validRecords.push({
+      review_id: reviewId,
+      product_id: productId,
+      product_name: String(source.product_name ?? source.productName ?? product.product_name ?? product.name ?? '') || undefined,
+      review_text: reviewText,
+      rating,
+      created_at: createdAt,
+      evaluation_expected_topics: Array.isArray(source.expected_topics)
+        ? source.expected_topics.map(String)
+        : Array.isArray(source.evaluation_expected_topics)
+          ? source.evaluation_expected_topics.map(String)
+          : undefined
+    });
+  });
+  return { validRecords, errors, duplicateCandidates };
+}
 export function parseCsv(text: string): ImportParseResult {
   const rows: string[][] = [];
   const rejectedRows: { row: number; message: string }[] = [];

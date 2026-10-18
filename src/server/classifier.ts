@@ -72,6 +72,25 @@ function getDeliveryDelayIssue(reviewText: string): IssueLabel | null {
   };
 }
 
+function getReturnsRefundIssue(reviewText: string): IssueLabel | null {
+  const patterns = [
+    /\b(?:refund|money back)\b[^.!?]{0,80}\b(?:never processed|not processed|not been processed|still not processed|never received|not received|still waiting|has not arrived|hasn't arrived|was denied|was refused|failed to arrive|not issued)\b/i,
+    /\b(?:never processed|not processed|not been processed|still not processed|never received|not received|still waiting|has not arrived|hasn't arrived|was denied|was refused|failed to arrive|not issued)\b[^.!?]{0,80}\b(?:refund|money back)\b/i,
+    /\b(?:return|return request|replacement)\b[^.!?]{0,80}\b(?:was denied|was refused|was ignored|never arrived|never sent|not sent|has not arrived|hasn't arrived|still waiting|failed to arrive)\b/i,
+    /\b(?:waiting for|still waiting on|never received|did not receive|didn't receive)\b[^.!?]{0,60}\b(?:refund|replacement)\b/i,
+    /\b(?:replacement|return request)\b[^.!?]{0,60}\b(?:never|not|didn't|did not|hasn't|has not)\b/i
+  ];
+  const evidence = patterns.map((pattern) => reviewText.match(pattern)?.[0]).find(Boolean);
+  if (!evidence) return null;
+  return {
+    category: 'other',
+    evidence,
+    confidence: 0.92,
+    severity: 'medium',
+    rationale: 'A return, refund, or replacement request was not completed as expected.'
+  };
+}
+
 export function enrichIssuesWithDeterministicRules(
   reviewText: string,
   rating: number,
@@ -339,9 +358,14 @@ export function classifyWithRules(reviewText: string, rating: number): {
     });
   }
 
+  const returnsRefundIssue = getReturnsRefundIssue(reviewText);
+  if (returnsRefundIssue && !issues.some((issue) => issue.category === 'other' && issue.evidence === returnsRefundIssue.evidence)) {
+    issues.push(returnsRefundIssue);
+  }
+
   // Explicit product or feature malfunction
   if (
-    /\b(?:does not|doesn't|did not|didn't|won't|will not|stopped)\s+(?:work|function|turn on)\b/i.test(text) ||
+    /\b(?:does not|doesn't|did not|didn't|won't|will not|stopped)\s+(?:work(?:s|ed|ing)?|function(?:s|ed|ing)?|turn on)\b/i.test(text) ||
     text.includes('not functioning') ||
     text.includes('malfunction')
   ) {
@@ -587,27 +611,35 @@ Review Text: "${review.review_text.replace(/"/g, '\\"')}"`;
       if (text) {
         const parsed = JSON.parse(text);
         if (Array.isArray(parsed.issues) && parsed.issues.length > 0) {
-          // Validate and verify evidence substrings against source text
-          const validIssues: IssueLabel[] = parsed.issues.map((i: any) => {
+          // Keep only known labels and source-backed evidence. When Gemini's
+          // quote is invalid, use a matching deterministic citation if one exists.
+          const deterministicIssues = classifyWithRules(review.review_text, review.rating).issues;
+          const validIssues: IssueLabel[] = parsed.issues.flatMap((i: any) => {
+            const category = ALLOWED_CATEGORIES.includes(i.category) ? i.category : undefined;
+            if (!category) return [];
             const rawEvidence = String(i.evidence || '').trim();
             const occursInText =
               rawEvidence.length > 0 &&
               review.review_text.toLowerCase().includes(rawEvidence.toLowerCase());
-
-            const verifiedEvidence = occursInText
-              ? rawEvidence
-              : review.review_text.slice(0, 100);
-
-            return {
-              category: ALLOWED_CATEGORIES.includes(i.category) ? i.category : 'other',
-              evidence: verifiedEvidence,
+            if (!occursInText) {
+              const ruleEvidence = deterministicIssues.find((issue) => issue.category === category);
+              return ruleEvidence ? [ruleEvidence] : [];
+            }
+            return [{
+              category,
+              evidence: rawEvidence,
               confidence: Math.max(0, Math.min(1, Number(i.confidence) || 0.85)),
               severity: ['critical', 'high', 'medium', 'low', 'uncertain'].includes(i.severity)
                 ? i.severity
                 : 'medium',
               rationale: i.rationale || 'AI-classified defect'
-            };
+            }];
           });
+
+          if (validIssues.length === 0) {
+            const fallback = classifyWithRules(review.review_text, review.rating);
+            return { ...fallback, method: 'deterministic_rules' };
+          }
 
           const normalizedIssues = enrichIssuesWithDeterministicRules(
             review.review_text,

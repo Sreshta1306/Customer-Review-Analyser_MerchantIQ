@@ -7,7 +7,7 @@ const tempDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'merchantiq-regression
 process.env.MERCHANTIQ_DATA_DIR = tempDataDir;
 
 try {
-  const [{ Store }, { normalizeImportPayload, parseCsv, parseImportText, validateReviewRecord }, { classifyWithRules, enrichIssuesWithDeterministicRules, getGeminiAnalysisMethod }] =
+  const [{ Store }, { normalizeImportPayload, normalizeReviewImportRows, parseCsv, parseImportText, validateReviewRecord }, { classifyWithRules, enrichIssuesWithDeterministicRules, getGeminiAnalysisMethod }] =
     await Promise.all([
       import('../src/server/db.ts'),
       import('../src/import/parsing.ts'),
@@ -19,6 +19,34 @@ try {
   );
   const records = normalizeImportPayload(fixture);
   assert.equal(records.length, 20, 'C01 fixture should normalize to 20 records');
+
+  const normalizedImport = normalizeReviewImportRows([
+    { review_id: 'REUSED-ID', review_text: 'invalid first row', rating: 0 },
+    {
+      review_id: 'REUSED-ID', product_id: 'UNKNOWN-SKU',
+      review_text: 'The package arrived late and support never replied.', rating: 1,
+      issues: [{ category: 'packaging_problems', evidence: 'fabricated quote', confidence: 1, severity: 'critical' }],
+      analysis_method: 'gemini_ai', duplicate_of: 'ATTACKER-CHOSEN'
+    },
+    { review_id: 'REUSED-ID', product_id: 'UNKNOWN-SKU', review_text: 'A later duplicate row.', rating: 2 }
+  ]);
+  assert.equal(normalizedImport.validRecords.length, 1, 'an invalid row must not reserve its review ID');
+  assert.equal(normalizedImport.validRecords[0].review_id, 'REUSED-ID');
+  assert.equal(normalizedImport.validRecords[0].product_id, 'UNKNOWN-SKU', 'unknown product IDs must be preserved');
+  assert.equal(normalizedImport.validRecords[0].review_text, 'The package arrived late and support never replied.');
+  assert.equal(normalizedImport.errors[0].field, 'rating');
+  assert.match(normalizedImport.errors[1].message, /Duplicate review_id/);
+  assert.equal(normalizedImport.duplicateCandidates, 1);
+  assert.equal('issues' in normalizedImport.validRecords[0], false, 'untrusted client labels must be discarded');
+  assert.equal('analysis_method' in normalizedImport.validRecords[0], false, 'untrusted client methods must be discarded');
+  const uploadedTextIssues = classifyWithRules(normalizedImport.validRecords[0].review_text, 1).issues;
+  assert.deepEqual(uploadedTextIssues.map((issue) => issue.category), ['delivery_related_issues', 'other'],
+    'trusted classification must follow the uploaded source text instead of supplied labels');
+  const pendingRefund = classifyWithRules('My refund has still not been processed.', 1);
+  assert.ok(pendingRefund.issues.some((issue) => issue.category === 'other'), 'refunds that have not been processed must be classified');
+  const novelComplaint = classifyWithRules('My replacement has still not arrived after the return was accepted.', 1);
+  assert.ok(novelComplaint.issues.some((issue) => issue.category === 'other'),
+    'new uploaded return/replacement complaints should influence classification');
 
   const store = new Store(false);
   const reviews = records.map((record) => {
@@ -276,6 +304,23 @@ try {
     'uncertain'
   );
 
+  const rollbackStore = new Store(false);
+  rollbackStore.importReviews([{ review_id: 'BASELINE', product_id: 'PERSISTED-PRODUCT', review_text: 'Baseline record.', rating: 3, created_at: new Date().toISOString(), issues: [] }], {
+    ...firstJob, job_id: 'JOB-ROLLBACK-BASE', total_rows: 1, valid_rows: 1
+  });
+  const dbFile = path.join(tempDataDir, 'merchant_intelligence_db.json');
+  const persistedBeforeFailure = fs.readFileSync(dbFile, 'utf8');
+  const previousSave = (rollbackStore as any).save.bind(rollbackStore);
+  (rollbackStore as any).save = () => { throw new Error('simulated persistence failure'); };
+  assert.throws(() => rollbackStore.importReviews([{ review_id: 'SHOULD-ROLL-BACK', product_id: 'P1', review_text: 'The zipper broke.', rating: 1, created_at: new Date().toISOString(), issues: [] }], {
+    ...firstJob, job_id: 'JOB-ROLLBACK-FAIL', total_rows: 1, valid_rows: 1
+  }), /simulated persistence failure/);
+  (rollbackStore as any).save = previousSave;
+  assert.equal(rollbackStore.getReviewById('SHOULD-ROLL-BACK'), undefined, 'failed import must roll back in-memory reviews');
+  assert.equal((rollbackStore as any).data.importJobs.some((job: { job_id: string }) => job.job_id === 'JOB-ROLLBACK-FAIL'), false,
+    'failed import must roll back import job metadata');
+  assert.equal(fs.readFileSync(dbFile, 'utf8'), persistedBeforeFailure, 'failed import must leave persisted bytes unchanged');
+
   const persistedStore = new Store(false);
   persistedStore.importReviews(
     [
@@ -372,6 +417,11 @@ try {
   assert.equal(assumptionsStore.getBusinessAssumptions('WS-ASSUMPTIONS-A').monthly_subscription_usd, 123);
   assert.notEqual(assumptionsStore.getBusinessAssumptions('WS-ASSUMPTIONS-B').monthly_subscription_usd, 123,
     'Workspace business assumptions must remain isolated');
+  assert.deepEqual(
+    classifyWithRules('The kettle stopped working after two uses.', 1).issues.map((issue) => issue.category),
+    ['functional_failures'],
+    'deterministic fallback should classify stopped-working complaints'
+  );
   console.log('Regression checks passed: 20 fixture records, 19 unique, 1 confirmed duplicate.');
 } finally {
   fs.rmSync(tempDataDir, { recursive: true, force: true });
