@@ -19,7 +19,8 @@ if (process.env.GEMINI_API_KEY) {
       httpOptions: {
         headers: {
           'User-Agent': 'aistudio-build'
-        }
+        },
+        retryOptions: { attempts: 1 }
       }
     });
   } catch {
